@@ -1,0 +1,40 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+desktop.ini
+.tmp/
+*.bak
+*.bak-*
+
+# 개발 전용 문서 — 새 세션이 바로 이어서 일하기 위한 것. 공개 저장소에는 올리지 않는다.
+/CLAUDE.md
+/DEV-STATUS.md
+**/.claude/settings.local.json
+
+# 실수로 올라가면 안 되는 비밀 파일
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*recovery-codes*
+*recovery_codes*
+
+# 개인 볼트·개인 자료가 실수로 이 폴더에 복사돼 들어오는 것을 막는다 (저장소 루트 바로 아래만 해당.
+# 가짜 볼트 fixtures/test-vault/ 안의 같은 이름 폴더는 가상 자료라 올려도 된다)
+/Areas/
+/Projects/
+/raw/
+/wiki/
+/output/
+/Notes/
+/Resources/
+/Archive/
+/.obsidian/
+/지원서/
+/개인정보/
+
+# 사이트에서 받은 실제 공고·기업 자료와 내려받은 파일이 저장소에 들어오지 않게
+*.hwp
+*.hwpx

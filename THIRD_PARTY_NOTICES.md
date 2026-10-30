@@ -1,0 +1,49 @@
+# 참고한 프로젝트와 사용하는 오픈소스 (Third-party notices)
+
+job-compass 자체는 [MIT 라이선스](LICENSE)입니다. 아래는 이 프로젝트가 방법과 구조를 참고했거나 실행에 쓰는 것들입니다. 라이선스 정보는 설치된 패키지 메타데이터(`importlib.metadata`)를 2026-10-30에 확인한 것이며, 정확한 조건은 각 프로젝트의 원문을 따릅니다. 이 문서는 법률 자문이 아닙니다.
+
+## 참고한 프로젝트: jobstack
+
+- 저장소: https://github.com/thesun4sky/jobstack (참고한 시점: 커밋 `69a59e2`, 2026-09-06, VERSION 1.1.0)
+- 라이선스: MIT. 아래는 그 고지문입니다.
+
+```
+MIT License
+
+Copyright (c) 2026 jobstack contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+- job-compass의 스킬 문서와 스크립트는 이 프로젝트의 **방법과 구조(답변 판정 방식, 첨삭 단계, 마감 처리 규칙 등)를 참고해 다시 쓴 것**입니다. 가까이 따라간 목록·표가 있을 수 있어 위 고지문을 함께 둡니다. 공개 전 점검 때 문장 단위로 대조해 이 절에 따라간 부분을 적습니다.
+- jobstack이 README에서 핵심 방법으로 소개하는 "결이요" 프레임워크의 출처·사용 조건은 **확인하지 못했습니다**(저장소에 출처 표기가 없음). 공개 전에 사용 여부를 다시 정합니다.
+
+## 사용하는 외부 구성 요소
+
+| 구성 요소 | 용도 | 라이선스 (확인한 것) |
+| --- | --- | --- |
+| openpyxl 3.1.5 | 엑셀 읽기·내보내기 | MIT |
+| pypdf 6.19.0 | PDF 글자 추출 | 패키지 메타데이터에 라이선스 표기가 없어 **원문 확인 필요** |
+| pyhwp 0.1b15 (`hwp5txt` 명령) | 한글(.hwp) 글자 추출 | **GNU AGPL v3 이상** — 이 저장소에 **포함하지 않고**, 사용자가 따로 설치해 명령으로만 호출하는 선택 도구로 다룹니다(포함·수정 배포 여부에 따라 조건이 달라지므로 공개 전 점검에서 다시 확인) |
+| six 1.17.0, olefile 0.47, lxml 6.1.3 (pyhwp의 의존 패키지) | 위와 같음 | MIT / BSD / BSD-3-Clause |
+| Python 3.12 | 실행 환경 | PSF License |
+
+## 사용 환경
+
+- Claude Code(Anthropic)의 스킬 형식으로 동작합니다. Claude, Anthropic, 그리고 이 문서에 언급된 서비스·회사 이름은 각 소유자의 상표입니다.

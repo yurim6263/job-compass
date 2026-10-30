@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(Areas/**)",
+      "Edit(Projects/SecondBrain/raw/**)",
+      "Edit(Projects/SecondBrain/wiki/**)",
+      "Edit(Projects/SecondBrain/output/**)",
+      "WebFetch(domain:www.jobkorea.co.kr)",
+      "WebFetch(domain:www.saramin.co.kr)"
+    ],
+    "deny": [
+      "Edit(Notes/**)",
+      "Edit(.claude/**)",
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(del *)",
+      "PowerShell(Remove-Item *)"
+    ]
+  }
+}
