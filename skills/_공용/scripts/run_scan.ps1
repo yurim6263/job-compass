@@ -31,7 +31,7 @@ $allow = @(
   'Edit(Areas/취업/공고 후보함.md)', 'Edit(Areas/취업/_scan-log.md)', 'Edit(Areas/취업/_scan-cache/**)',
   'Edit(Areas/취업/마감 캘린더.md)', 'Edit(Areas/취업/내보내기/**)', 'Edit(Areas/취업/오늘 현황.md)',
   'Edit(Areas/취업/_widget/**)', 'Edit(Areas/취업/_백업/**)',
-  'Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)', 'Bash(curl *)', 'Bash(perl *)', 'Bash(mkdir -p *)', 'Bash(date *)'
+  'Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)', 'Bash(curl *)', 'Bash(perl *)', 'Bash(mkdir -p *)', 'Bash(date *)', 'Bash(sleep *)'
 )
 $deny = @(
   'Edit(Projects/**)', 'Edit(Notes/**)', 'Edit(.claude/**)', 'Edit(Areas/취업/지원 현황.md)',
@@ -49,7 +49,8 @@ if ($DryRun) {
 $claude = (Get-Command claude -ErrorAction Stop).Source
 Push-Location $Vault
 try {
-  $job = Start-Job -ScriptBlock { param($c, $a, $v) Set-Location $v; & $c @a 2>&1 | Out-String } -ArgumentList $claude, $claudeArgs, $Vault
+  # 백그라운드 작업은 새 프로세스라 콘솔 출력 인코딩이 기본(한글 코드페이지)이다 — claude 의 UTF-8 출력이 깨지지 않게 UTF-8 로 맞춘다
+  $job = Start-Job -ScriptBlock { param($c, $a, $v) [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location $v; & $c @a 2>&1 | Out-String } -ArgumentList $claude, $claudeArgs, $Vault
   if (-not (Wait-Job $job -Timeout ($TimeoutMinutes * 60))) { Stop-Job $job; $result = "시간 초과($TimeoutMinutes 분)로 중단"; $code = 1 }
   else { $result = (Receive-Job $job); $code = 0 }
   Remove-Job $job -Force
