@@ -18,7 +18,7 @@ description: /exp-intake가 raw/내경험/ 에 들인 자료를 프로젝트별�
 6. `origin`은 판별 근거(커밋 작성자·본인이 쓴 설명)가 있을 때만 정한다. 근거가 없으면 `미정`으로 두고 **묻는다.** `받은교재`는 카드를 만들지 않고 프로젝트 문서에 "학습 자료" 한 줄만 둔다.
 7. 이미 있는 프로젝트 문서는 **덮어쓰지 않는다.** 카드 추가·`updated` 갱신만 하고, 바뀐 raw가 있으면 차이를 보고한다. 고치기 전 `python -I -X utf8 $S/backup_doc.py Projects/SecondBrain/wiki/내경험_<프로젝트>.md`로 수정 전 사본을 `Areas/취업/_백업/경험문서/`에 남긴다(볼트가 git이 아니므로. `wiki/` 폴더에는 사본을 두지 않는다. 직전 사본과 내용이 같으면 새로 만들지 않는다).
 8. 질문은 **한 번에 하나**, 항목당 **1회**. 답이 없으면 placeholder(`[확인 필요]`)를 유지하고 계속 진행한다(대화형이 아닌 실행이면 질문을 보고서의 "물을 것"에 모은다).
-9. 끝나면 새로 만든 파일·고친 파일 목록을 보고한다. 제출·메일·Notion 쓰기는 하지 않는다.
+9. 끝나면 새로 만든 파일·고친 파일 목록을 보고한다. 제출·메일은 하지 않는다. Notion에는 카드 **요약만**(11-1), 미리보기와 확인 뒤에 쓴다.
 
 ## 모드
 | 모드 | 하는 일 |
@@ -48,6 +48,7 @@ description: /exp-intake가 raw/내경험/ 에 들인 자료를 프로젝트별�
 9. **`keywords`·`question_types`·`job_link_tags`** — `keywords`는 근거 raw 본문에 나온 낱말만(예: README에 있는 `LSTM`). 직무 태그·질문 유형은 고정 목록에서만. 사용자 확인 후 확정(대화형이 아니면 "초안"으로 두고 보고).
 10. **저장** — `wiki/내경험_<프로젝트>.md` 쓰기(frontmatter 포함, sources에 근거 raw 전부), `wiki/index.md`의 문서 목록에 추가하고 `updated` 갱신.
 11. **검사** — `python -I -X utf8 $S/verify_cards.py Projects/SecondBrain/wiki/내경험_<프로젝트>.md` 를 돌린다. FAIL이 나오면 고치거나(근거 없는 수치·낱말 삭제, 링크 정정) 카드를 빼고 다시 돌린다. `DONE_WITH_CONCERNS`는 남은 `[확인 필요]`를 보고한다.
+11-1. **Notion 반영(선택)** — 검사가 PASS·DONE_WITH_CONCERNS인 카드만, `notion`이 `on`이거나 사용자가 시켰을 때. `python -I -X utf8 $S/notion_sync.py plan --table 경험정리 [--key <카드 id>]`가 제목·카드 ID·프로젝트·직무 태그·한 줄 요약(title)·근거 상태만 만든다(problem·role·action·change·evidence 전문은 올리지 않음). 나머지는 `_공용/references/notion.md` 순서. Notion 쪽을 고쳐도 볼트에 돌아오지 않는다고 한 번 알린다.
 12. **보고** — 새로 만든/고친 파일 / 카드별 판정(PASS·DONE_WITH_CONCERNS·FAIL) / 자료 간 차이 / 사용자에게 물을 것 / 만들지 않은 카드와 이유(받은교재·근거 부족) / 다음 할 일.
 
 ## 보강 모드

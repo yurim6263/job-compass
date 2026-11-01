@@ -1,7 +1,7 @@
 ---
 name: job-flow
 description: 취업 준비의 입구이자 현황 관리. 인자 없이 부르면 "오늘 현황"(마감 임박·정체·새 후보·진행 중 단계·다음 행동 제안)을 보여 주고, 회사·공고를 주면 그 건의 단계 체크리스트를, "서류합 됐어/불합이야/지원 취소했어" 같은 말에는 현황표 상태 갱신을, "통계/마감/현황 보여줘/뭐부터 해?"에는 해당 보기를 낸다. 일을 직접 하지 않고 다음 스킬을 제안만 한다.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/skills/_공용/scripts/*), mcp__claude_ai_Notion__notion-get-self, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-query-data-sources
 ---
 
 # /job-flow — 입구 · 오늘 현황 · 상태 갱신 · 통계
@@ -11,7 +11,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 ## 하는 것 / 하지 않는 것
 - 쓰는 파일: **현황표**(진행상태·상태일·최종 단계·메모만, `status_table.py`로) · `Areas/취업/오늘 현황.md`와 `_widget/오늘 현황.json`(덮어써도 되는 사본, `dashboard.py today --write`) · 후보함 상태(지원예정/건너뜀만). 그 밖은 읽기만. `wiki/`·`raw/`·`output/`·`Notes/`는 고치지 않는다.
 - **일을 직접 하지 않는다.** 단계를 판정해 다음 스킬을 **제안**만 한다(최대 3개, 이유 한 줄). 고르면 그 스킬로 넘어간다. 자동 실행 없음.
-- Notion에 쓰지 않는다. 지원서 제출·메일 발송도 하지 않는다. 개인정보(연락처·학번)는 다루지 않고, 메모에는 제3자 연락처·이메일을 받지 않는다(이름·역할까지만).
+- Notion은 사용자가 시킬 때만(처음 연결·일괄 반영·수집 공고 올리기·Notion에서 가져오기·밀린 반영, 아래 "Notion"). 지원서 제출·메일 발송은 하지 않는다. 개인정보(연락처·학번)는 다루지 않고, 메모에는 제3자 연락처·이메일을 받지 않는다(이름·역할까지만).
 - 모든 날짜는 KST. 현황표 형식이 깨져 있으면 읽은 만큼만 보여 주고 **고치지 않는다**(`status_table.py check` 결과를 알려 준다).
 
 ## 호출별 동작
@@ -24,6 +24,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 | "마감" | `python -I -X utf8 $S/calendar_export.py build` 로 `마감 캘린더.md`를 새로 만들고 이번 주·다음 주 구획을 보여 준다 |
 | 상태 갱신 말("서류합 됐어" 등) | 아래 "상태 갱신" |
 | "이 후보 지원할래" | 아래 "후보 → 현황표" |
+| "Notion 연결해줘" · "Notion에 올려줘" · "Notion에서 가져와" · "밀린 반영" | 아래 "Notion" |
 | 그 밖 | 아래 "요청 → 스킬" |
 
 ## 상태 갱신
@@ -46,6 +47,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 - 후보함(`Areas/취업/공고 후보함.md`)에서 사용자가 고른 건은 **`/job-posting`을 호출**한다(미리보기 점수는 임시 폴더에만 있으므로 정식 저장은 `/job-posting`이 본문을 다시 받아서 한다).
 - `/job-posting`이 현황표에 `Not started` 행을 추가하면 후보함의 그 줄 상태를 `지원예정`으로 바꾼다: `python -I -X utf8 $S/candidates.py set-state --id <공고 ID> --state 지원예정`(스크립트가 없는 볼트에서는 후보함 상태 칸만 Edit).
 - "건너뛸래"라고 하면 후보함 상태만 `건너뜀`으로(삭제 없음).
+
+## Notion
+규칙 전체는 `_공용/references/notion.md`(표 6개·올리지 않는 것·미리보기와 확인·삭제 없음). 계산은 `python -I -X utf8 $S/notion_sync.py …`.
+- **"Notion 연결해줘" / 처음 설정** — notion.md "처음 연결" 1~4. 끝나면 사용자에게 `설정.md`의 `notion`을 `on`으로 바꿀지 묻고, OK면 그 칸만 고친다.
+- **"Notion에 올려줘"(지원 현황)** — `notion_sync.py plan --table 지원현황` → 만들기/고치기/같음 개수와 표 미리보기 → 확인 → 쓰기 → 건마다 `record`. 상태 갱신 직후 `notion`이 `on`이면 "이 변경도 Notion에 반영할까요?"를 한 번 묻는다(그 행 `--key`만).
+- **"수집 공고도 올려줘"** — 기준 점수를 묻고(기본 70) `plan --table 수집공고 --min-score N`. 점수가 없는 후보는 올리지 않는다(사용자가 "다 올려"라고 하면 `--min-score` 없이).
+- **"Notion에서 가져와"** — notion.md "Notion → 볼트". 차이는 고르지 않고 보이기만, 사용자가 고른 칸만 위 "상태 갱신" 순서로 반영.
+- **밀린 반영** — 오늘 현황에 `Notion 밀린 반영 N건`이 보이면 그 줄을 그대로 보여 준다. "올려줘" → `pending list`의 건마다 해당 표의 값 만들기부터. "버려" → `pending clear`.
+- 무인 실행(예약 스캔)에서는 이 구획을 쓰지 않는다.
 
 ## 요청 → 스킬
 | 요청 | 이동 |

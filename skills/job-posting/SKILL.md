@@ -1,7 +1,7 @@
 ---
 name: job-posting
 description: 채용공고 링크(또는 붙여넣은 공고 글·공고 PDF·후보함의 행) 하나를 받아 원문을 raw/채용공고에 저장하고, wiki에 공고 정리 문서를, output에 내 경험 카드와의 대조(지원 준비)와 점수를 쓰고, Areas/취업/지원 현황에 한 줄 추가하고 마감 캘린더를 갱신한다. "/job-posting <링크>", "이 공고 분석해 줘", "공고 정리해 줘", "점수 내 줘"라고 하면 쓴다.
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash(mkdir -p:*), Bash(curl:*), Bash(perl:*), Bash(iconv:*), Bash(cat:*), Bash(sed -n:*), Bash(cp -n:*), Bash(cmp:*), Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash(mkdir -p:*), Bash(curl:*), Bash(perl:*), Bash(iconv:*), Bash(cat:*), Bash(sed -n:*), Bash(cp -n:*), Bash(cmp:*), Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*), mcp__claude_ai_Notion__notion-get-self, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-query-data-sources
 ---
 
 # 채용공고 → raw · wiki · output(점수) · 지원 현황 · 마감 캘린더
@@ -44,6 +44,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash(mkdir -p:*), Bash(curl
 - 공고 본문을 못 얻었으면(링크가 막히고 글·PDF도 없음) 점수를 내지 않는다(`미산출 — 본문 미확보`). 후보함의 제목·태그만으로는 점수를 내지 않는다.
 - 사용자가 "빠르게"라고 하면 대조 검토(서브에이전트)만 건너뛰고 건너뛰었다고 적는다.
 
+## 5-1. Notion 반영 (선택)
+`Areas/취업/설정.md`의 `notion`이 `on`이거나 사용자가 "Notion에도 올려줘"라고 했을 때만. `_공용/references/notion.md` 순서대로: `python -I -X utf8 .claude/skills/_공용/scripts/notion_sync.py plan --table 지원현황 --key <공고 ID(없으면 기업명|직무)>` → 미리보기 → 확인 → 쓰기 → `record`. 연결이 안 되면 건너뛰고 보고(되묻지 않음). 수집 공고 표는 이 스킬이 쓰지 않는다.
+
 ## 6. 보고 (볼트 규칙 9)
 1. 결론 3줄 — output 결론에서(점수·등급·게이트 🚫 포함)
 2. 새로 만든 파일·수정한 파일 목록(raw · wiki · index · output · 지원 현황 · 마감 캘린더 · `.ics` · 일정)
@@ -57,4 +60,4 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash(mkdir -p:*), Bash(curl
 - 카드에 없는 경험을 output에 쓰는 것 · 카드를 고치는 것(`/exp-organize`만 고친다)
 - 점수를 모델이 계산하거나 손으로 고치는 것
 - 현황표의 진행상태·최종 단계를 `/job-flow` 없이 고치는 것(`/job-flow`가 없는 볼트에서만 `set-status`를 임시로, 사용자 확인 후)
-- Notion에 쓰는 것 — 현황표 반영은 사용자가 따로 시킨다(Notion 모드는 `Areas/취업/설정.md`, 기본 꺼짐)
+- Notion에 묻지 않고 쓰는 것 — 위 5-1처럼 미리보기와 확인을 거친 경우만 쓴다(Notion 모드는 `Areas/취업/설정.md`, 기본 꺼짐)

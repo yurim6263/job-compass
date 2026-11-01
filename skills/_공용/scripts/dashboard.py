@@ -265,6 +265,8 @@ def render_today(b, now):
         first.append(f"  - 스캔 소스 경고: {w}")
     if b["bad_date"]:
         first.append("  - 서류마감 형식 확인 필요: " + ", ".join(b["bad_date"]))
+    if notion.strip() == "on" and notion_pending():
+        first.append(f"  - Notion 밀린 반영 {notion_pending()}건 — \"Notion 밀린 반영 올려줘\"로 확인 후 올리기")
     L += first or ["  - 없음"]
     L.append(f"📅 마감 임박 (D-{SOON_DAYS} 이내)")
     L += [f"  - {i['deadline'].strftime('%m-%d')} ({d_label(i['deadline'], today)}) {i['row']['기업명']} · {i['row']['직무']} · 적합도 {i['row']['적합도'] or '—'} [{i['row']['진행상태']}]"
@@ -296,6 +298,27 @@ def render_today(b, now):
     return "\n".join(L) + "\n"
 
 
+def last_scan():
+    """`_scan-log.md` 에서 마지막 무인 실행 종료 줄의 시각(YYYY-MM-DD HH:MM)과 코드. 없으면 None"""
+    log = AREA / "_scan-log.md"
+    if not log.exists():
+        return None
+    hit = None
+    for ln in log.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^-\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · 무인 실행 종료.*코드 (\d+)", ln.strip())
+        if m:
+            hit = {"at": m.group(1), "code": int(m.group(2))}
+    return hit
+
+
+def notion_pending():
+    p = AREA / "_notion-대기.md"
+    if not p.exists():
+        return 0
+    rows = [ln for ln in p.read_text(encoding="utf-8").splitlines() if ln.lstrip().startswith("|")]
+    return max(0, len(rows) - 2)      # 머리줄·구분줄 제외
+
+
 def to_json(b, now):
     def item(i):
         r = i["row"]
@@ -304,7 +327,12 @@ def to_json(b, now):
     return {"generated_at": now.isoformat(timespec="minutes"), "today": b["today"].isoformat(), "timezone": "KST",
             "counts": {"in_progress": len(b.get("inprog", [])), "closed": b.get("closed", 0), "urgent": len(b.get("urgent", [])),
                        "overdue": len(b.get("overdue", [])), "wait_result": len(b.get("wait_result", [])),
-                       "new_candidates": b.get("cand_total", 0)},
+                       "new_candidates": b.get("cand_total", 0),
+                       "new_candidates_today": sum(1 for c in read_candidates(b["today"])
+                                                   if c.get("발견일", "").strip() == b["today"].isoformat()),
+                       "notion_pending": notion_pending()},
+            "notion": (read_setting(AREA / "설정.md", "notion") or "off").strip(),
+            "last_scan": last_scan(),
             "urgent": [item(i) for i in b.get("urgent", [])], "overdue": [item(i) for i in b.get("overdue", [])],
             "wait_result": [item(i) for i in b.get("wait_result", [])],
             "stale": [{**item(i), "days": d} for i, d in b.get("stale", [])],

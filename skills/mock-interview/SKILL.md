@@ -1,7 +1,7 @@
 ---
 name: mock-interview
 description: 글로 하는 모의면접(인성·기술·컬처핏), AI 역량검사 연습, 실전 후기 기록. 면접관 역할로 한 문항씩 묻고 답변을 Yes/No 체크리스트로 피드백하고, 리포트를 쓰고, 자소서 방어 맵의 방어 상태를 갱신한다. "모의면접", "면접 연습", "AI 역량검사 연습", "면접 후기", "/mock-interview"라고 하면 쓴다. 연습은 현황표 진행상태를 바꾸지 않는다.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*), mcp__claude_ai_Notion__notion-get-self, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-query-data-sources
 ---
 
 # /mock-interview — 모의면접 · AI 역량검사 연습 · 후기 기록
@@ -31,6 +31,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(date:*), Bash(python -I -X ut
 4. **진행** — `[Q3/7 - 직무역량]` 표시, 면접관 어투, 시간·분량 안내. 즉시 방식이면 답변마다 짧게 피드백(체크리스트 아니오 항목과 인용), 마지막 방식이면 끝에. 막히면 "천천히 답해 주세요", 모르는 기술 질문에는 정답을 바로 알려 주지 않고 "아는 만큼 말해 보세요 → 어디서 막혔는지" 순서, 끝에 학습 키워드만 제안. 도중에 그만두면 `중단`으로 저장.
 5. **계산** — 답변별 체크리스트를 세션 JSON(`T/<오늘>-세션.json`, `T`=`Areas/취업/_scan-cache/interview/`)으로 만들어 `python -I -X utf8 $S/interview_tools.py calc <json> --map <방어맵.md>`. 출력(통과율 `산정 n/m`·사실 일치·반복 약점 3·방어 상태 판정·방어 맵 활용률)을 **그대로** 리포트에 쓴다.
 6. **리포트·저장** — 경로는 `interview_tools.py next-path --company … --job … --mode … --intensity …`(같은 날 같은 모드면 `_2`, 덮어쓰지 않음). 구조는 `report-format.md`. 방어 맵 갱신: 판정 후보를 보여 주고 **확인 후** `interview_tools.py defense-set <맵> --id … --state … [--hint …]`(수정 전 사본 자동). `interview_tools.py log-summary …`로 `기록 요약.md`에 한 줄.
+6-1. **Notion 반영(선택)** — `notion`이 `on`이거나 사용자가 시켰을 때만. `_공용/references/notion.md` 순서. 값 JSON(`T/<오늘>-노션.json`): `제목`(`<날짜> <회사> <모드>`), `date:날짜:start`, `종류`(인성·기술·컬처핏·AI 역량검사·실전 후기), `통과율`(calc 출력 ÷ 100, `중단`이면 뺌), `반복 약점`(calc의 반복 약점 3 그대로), `지원 현황`(공고 ID 문자열, 회사 미정이면 뺌) → `notion_sync.py check --table 면접연습 --key <리포트 파일 이름> --props <json>`. **답변 전문·질문 원문·제3자 정보는 올리지 않는다.**
 7. **다음 추천** — 약한 영역 같은 모드 재도전 / `/cover-letter`로 약한 문장 수정 / `/exp-organize`로 카드 보강(면접에서 새 사실이 나왔을 때만 "카드를 보강할까요?", 자동으로 쓰지 않음) / `/company-research`로 조사 보강.
 
 ## `후기기록` 모드 (실제 면접을 본 뒤)

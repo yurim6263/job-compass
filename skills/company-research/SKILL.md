@@ -1,7 +1,7 @@
 ---
 name: company-research
 description: 회사 하나를 조사해 raw/기업조사에 조회 원본을, wiki/기업조사_<회사>.md 에 사실만, output 에 내 경험 카드와의 대조(키워드 체크리스트·"팀원처럼" 화두·지원 판단)를 쓴다. "기업 분석 해줘", "이 회사 어때", "/company-research <회사>"라고 하면 쓴다. 사용자가 시킬 때만 부르고 예약 실행에는 넣지 않는다. 연봉은 수집하지 않는다.
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, Bash(curl:*), Bash(perl:*), Bash(mkdir -p:*), Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, Bash(curl:*), Bash(perl:*), Bash(mkdir -p:*), Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*), mcp__claude_ai_Notion__notion-get-self, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-query-data-sources
 ---
 
 # /company-research — 기업 조사 · 키워드 체크리스트 · 지원 판단
@@ -16,7 +16,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, Bash(c
 5. 연봉은 수집하지 않는다(공고에 적힌 것만 인용). 기업문화 점수는 만들지 않는다. 공고 점수는 `/job-posting`의 것을 **그대로 인용**하고 다시 계산하지 않는다.
 6. 막히면 건너뛰고 raw에 `조회 실패: 이유`를 남기고 "<자료>를 붙여넣어 주시면 이어갑니다"를 요청한다. 붙여넣은 글·PDF는 정식 입력이다.
 7. 숫자는 스크립트: 키워드 반영 가능률·지원 판단은 `company_calc.py`. 모델은 판정만 쓴다.
-8. 지원서 제출·메일 발송·Notion 쓰기(사용자가 시킬 때만)는 이 스킬이 하지 않는다.
+8. 지원서 제출·메일 발송은 하지 않는다. Notion에는 아래 10-1 순서로만, 미리보기와 확인 뒤에 쓴다.
 
 ## 모드
 `빠른`(기본: 공고 wiki + 공식 홈페이지 소개·비전·인재상 + 최근 뉴스 5건 + 공시 재무 한 번) · `자세히`(+ CEO 메시지 + 평판 + 제품·서비스 분석 + 전형 방식 6항목 + 비교군, 사용자가 시킬 때만) · `갱신`(오래된 항목만 다시) · `비교군`(같은 업종 2~3사 1줄씩, 요청할 때만).
@@ -39,6 +39,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, Bash(c
 8. **output 저장** — `P/output/YYYY-MM-DD <회사> 기업분석.md`, 맨 위에 요약 블록(1,500자 이내, `wiki-and-output.md`).
 9. **입사 후 적용 제안**(선택) — 카드 최대 3장에 `> 해석(입사 후 적용, <회사> <조사일>): …` 블록. **사용자가 저장을 확인한 뒤에만** 카드(wiki)를 고친다(예외로 이 스킬만 `apply_plans`를 쓴다). 근거가 체크리스트·화두 원문에 없는 문장은 만들지 않고, 계획·가정임을 숨기지 않는다.
 10. **현황표 메모** — 그 회사 행이 있으면 `status_table.py update-fit --id <공고 ID> --memo-add "기업조사 YYYY-MM-DD"`(열은 새로 만들지 않음).
+10-1. **Notion 반영(선택)** — `notion`이 `on`이거나 사용자가 시켰을 때만. `_공용/references/notion.md` 순서. 값 JSON(`T/<오늘>-노션.json`): `회사`, `date:조사일:start`, `지원 판단`(company_calc 출력 그대로: 지원 권장·조건부 지원·신중 검토), `키워드 반영 가능률`(0~1, 산정 못 했으면 뺌), `지원 현황`(그 회사 행의 공고 ID 문자열) → `notion_sync.py check --table 회사조사 --key <회사> --props <json>`. 본문은 `## 볼트 요약` 아래에 output 요약 블록의 한눈에 보기·화두 3·지원 판단 이유만(평판 집계·리뷰·재무 표 전문은 올리지 않음).
 11. **보고** — 5줄 요약 + 우려사항 + 만든·고친 파일 목록 + 다음 스킬 추천(`/cover-letter`, `/mock-interview`). `경험 카드 없음`이 자주 나온 키워드는 "이 영역의 경험이 있으면 `/exp-intake`로 남길까요?"
 
 ## 예외
