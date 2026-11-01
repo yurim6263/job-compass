@@ -14,15 +14,25 @@
   볼트 폴더(예: 가짜 볼트 fixtures\test-vault, 실제 볼트는 사용자가 정한 뒤).
 .PARAMETER DryRun
   claude 를 부르지 않고 만들 명령과 허용 규칙만 출력한다.
+.PARAMETER ConfigDir
+  Claude Code 설정 폴더(CLAUDE_CONFIG_DIR). 계정마다 설정 폴더를 따로 쓰는 경우 이 폴더의 로그인 계정으로 실행된다.
+  비우면 실행 환경의 CLAUDE_CONFIG_DIR(없으면 기본 폴더 ~\.claude)의 계정을 쓴다. 작업 스케줄러는 터미널의 환경 변수를 물려받지 않으므로
+  기본 폴더가 아닌 계정으로 돌리려면 반드시 이 값을 준다.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Vault,
   [switch]$DryRun,
-  [int]$TimeoutMinutes = 30
+  [int]$TimeoutMinutes = 30,
+  [string]$ConfigDir = ''
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $Vault -PathType Container)) { throw "볼트 폴더가 없습니다: $Vault" }
 $Vault = (Resolve-Path -LiteralPath $Vault).Path
+if ($ConfigDir) {
+  if (-not (Test-Path -LiteralPath $ConfigDir -PathType Container)) { throw "설정 폴더가 없습니다: $ConfigDir" }
+  $ConfigDir = (Resolve-Path -LiteralPath $ConfigDir).Path
+}
+$configNote = if ($ConfigDir) { $ConfigDir } elseif ($env:CLAUDE_CONFIG_DIR) { "$($env:CLAUDE_CONFIG_DIR) (환경 변수)" } else { '기본 폴더(~\.claude)' }
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $prompt = 'job-scan 스킬을 사용해 검색 조건 파일대로 공고 후보를 수집해 주세요. 무인 실행입니다: 질문하지 말고, 허용되지 않아 못 한 단계와 실패한 소스는 요약에 적으세요. 현황표·raw·wiki는 수정하지 마세요.'
@@ -43,6 +53,7 @@ $log = Join-Path $Vault 'Areas\취업\_scan-log.md'
 $start = Get-Date
 if ($DryRun) {
   Write-Output "[미리보기] 볼트: $Vault"
+  Write-Output "[미리보기] 설정 폴더(계정): $configNote"
   Write-Output "[미리보기] claude $($claudeArgs -join ' ')"
   exit 0
 }
@@ -50,7 +61,7 @@ $claude = (Get-Command claude -ErrorAction Stop).Source
 Push-Location $Vault
 try {
   # 백그라운드 작업은 새 프로세스라 콘솔 출력 인코딩이 기본(한글 코드페이지)이다 — claude 의 UTF-8 출력이 깨지지 않게 UTF-8 로 맞춘다
-  $job = Start-Job -ScriptBlock { param($c, $a, $v) [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location $v; & $c @a 2>&1 | Out-String } -ArgumentList $claude, $claudeArgs, $Vault
+  $job = Start-Job -ScriptBlock { param($c, $a, $v, $cfg) [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; if ($cfg) { $env:CLAUDE_CONFIG_DIR = $cfg }; Set-Location $v; & $c @a 2>&1 | Out-String } -ArgumentList $claude, $claudeArgs, $Vault, $ConfigDir
   if (-not (Wait-Job $job -Timeout ($TimeoutMinutes * 60))) { Stop-Job $job; $result = "시간 초과($TimeoutMinutes 분)로 중단"; $code = 1 }
   else { $result = (Receive-Job $job); $code = 0 }
   Remove-Job $job -Force

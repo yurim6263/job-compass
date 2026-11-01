@@ -6,7 +6,9 @@
   python -I -X utf8 extract_text.py <파일> --stdout          # 파일을 만들지 않고 화면에만(증명서 사실 확인용)
 
 형식: .md .txt .csv → 그대로 / .docx .pptx → 압축 안 XML(zipfile) / .xlsx → openpyxl /
-      .pdf → pypdf / .ipynb → 마크다운 셀 + 출력 요약(코드 셀 제외) / .hwp .hwpx → hwp5txt 가 있을 때만
+      .pdf → pypdf / .ipynb → 마크다운 셀 + 출력 요약(코드 셀 제외) /
+      .hwp .hwpx → --hwp-convert 를 주면 한글(COM)로 PDF 변환 후 pypdf(hwp_to_pdf.ps1), 아니면 hwp5txt 가 있을 때만
+  python -I -X utf8 extract_text.py --hwp-check   # 한글 자동 조작이 되는지만 확인
 
 규칙(기획 01 §3):
   - 비밀값·개인정보 줄은 '[가림: 종류]'로 바꿔서 쓴다. 이 검사에 걸린 문서는 원본 복사를 하지 않는다.
@@ -153,10 +155,51 @@ def read_ipynb(path, _opt):
     return "\n".join(out), "노트북의 마크다운 셀과 코드 셀 출력 요약만 추출", "코드 셀 본문·그림 출력은 없음. 출력은 500자까지"
 
 
-def read_hwp(path, _opt):
+HWP_PS = Path(__file__).resolve().parent / "hwp_to_pdf.ps1"
+HWP_CACHE = Path("Areas/취업/_scan-cache/intake/hwp-pdf")
+
+
+def run_hwp_ps(args, timeout):
+    """hwp_to_pdf.ps1 을 부르고 (종료 코드, 마지막 줄 JSON)을 돌려준다. PowerShell 이 없으면 (2, {})."""
+    ps = shutil.which("powershell") or shutil.which("powershell.exe")
+    if not ps or not HWP_PS.exists():
+        return 2, {"ok": False, "note": "PowerShell 또는 hwp_to_pdf.ps1 없음"}
+    try:
+        r = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(HWP_PS)] + args,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 7, {"ok": False, "note": "변환 스크립트가 끝나지 않음"}
+    lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
+    try:
+        info = json.loads(lines[-1]) if lines else {}
+    except json.JSONDecodeError:
+        info = {"note": lines[-1] if lines else r.stderr.strip()[:200]}
+    return r.returncode, info
+
+
+def hwp_via_hancom(path, opt):
+    """한글(COM)로 PDF를 만든 뒤 pypdf로 읽는다. 원본은 읽기만 하고, PDF는 임시 폴더(--hwp-cache)에 둔다."""
+    cache = Path(opt.hwp_cache)
+    pdf = cache / f"{jc.sha256_file(path)[:12]}_{Path(path).name}.pdf"   # 내용이 같으면 같은 이름 → 다시 돌리면 재사용
+    if not pdf.exists():
+        code, info = run_hwp_ps(["-Src", str(path), "-Out", str(pdf), "-TimeoutSeconds", str(opt.hwp_timeout)],
+                                timeout=opt.hwp_timeout + 40)
+        if code != 0 or not pdf.exists():
+            raise Unreadable(4, f"한글로 PDF 변환 실패: {info.get('note', '')} — PDF로 저장해 달라고 요청")
+    try:
+        text, _how, _lim = read_pdf(pdf, opt)
+    except Unreadable:
+        raise Unreadable(4, "한글로 PDF는 만들었지만 글자가 거의 없음(그림만 있는 문서일 수 있음) — 내용을 붙여넣어 달라고 요청")
+    return (text, "한글(COM)로 PDF 변환 → pypdf로 쪽별 글자 추출",
+            f"그림 속 글자는 없음. 표는 칸 구분 없이 줄글로 풀림. 변환 PDF: {pdf.as_posix()}")
+
+
+def read_hwp(path, opt):
+    if getattr(opt, "hwp_convert", False):
+        return hwp_via_hancom(path, opt)
     exe = shutil.which("hwp5txt")
     if not exe:
-        raise Unreadable(4, "hwp5txt(pyhwp)가 없어 읽지 못함 — PDF로 저장해 달라고 요청")
+        raise Unreadable(4, "hwp를 읽지 못함 — 한글이 있으면 --hwp-convert 로 PDF 변환, 없으면 PDF로 저장해 달라고 요청")
     r = subprocess.run([exe, str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     text = r.stdout.strip()
     if r.returncode != 0 or len(text) < 30:
@@ -185,12 +228,23 @@ def safe_copy(src, dst):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("src")
+    ap.add_argument("src", nargs="?")
     ap.add_argument("--out-dir")
     ap.add_argument("--stdout", action="store_true")
     ap.add_argument("--copy-original", action="store_true")
     ap.add_argument("--max-rows", type=int, default=20)
+    ap.add_argument("--hwp-convert", action="store_true", help="hwp·hwpx를 한글(COM)로 PDF 변환해 읽는다(사용자 동의 후)")
+    ap.add_argument("--hwp-cache", default=str(HWP_CACHE), help="변환 PDF를 둘 임시 폴더(볼트 기준)")
+    ap.add_argument("--hwp-timeout", type=int, default=60)
+    ap.add_argument("--hwp-check", action="store_true", help="한글 자동 조작이 되는지만 확인(0 가능 / 2 불가)")
     opt = ap.parse_args()
+
+    if opt.hwp_check:
+        code, info = run_hwp_ps(["-Check"], timeout=60)
+        print(json.dumps({"hancom": code == 0, "note": info.get("note", "")}, ensure_ascii=False))
+        return 0 if code == 0 else 2
+    if not opt.src:
+        ap.error("파일 경로가 필요함")
 
     src = Path(opt.src)
     ext = src.suffix.lower()

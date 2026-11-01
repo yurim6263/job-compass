@@ -84,7 +84,7 @@ def walk(root, me, out, in_repo=False):
                 item = {"path": str(p), "kind": KIND.get(ext, "기타"), "size": p.stat().st_size,
                         "size_h": jc.fmt_size(p.stat().st_size), "sha": jc.sha256_file(p)}
                 if ext in (".hwp", ".hwpx"):
-                    item["note"] = "hwp — hwp5txt 없으면 미수집(PDF 요청)"
+                    item["note"] = "hwp — 한글이 있으면 동의 후 PDF 변환(--hwp-convert), 없으면 미수집(PDF 요청)"
                 s = sniff(p)
                 if s:
                     item["sniff"] = s

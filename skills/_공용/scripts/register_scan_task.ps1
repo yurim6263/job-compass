@@ -10,9 +10,12 @@
 .PARAMETER Time    매일 실행 시각(HH:mm)
 .PARAMETER Apply   실제로 등록한다
 .PARAMETER Unregister  등록된 작업을 지운다(-Apply 와 함께)
+.PARAMETER ConfigDir   Claude Code 설정 폴더(계정). 작업 스케줄러는 터미널 환경 변수를 물려받지 않으므로, 기본 폴더(~\.claude)가 아닌 계정으로
+                       돌리려면 이 값을 준다. 비우면 기본 폴더의 계정으로 실행된다.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Vault,
+  [string]$ConfigDir = '',
   [string]$Time = '08:30',
   [switch]$Apply,
   [switch]$Unregister,
@@ -33,8 +36,14 @@ if ($Unregister) {
 }
 
 $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -Vault `"$Vault`""
+if ($ConfigDir) {
+  if (-not (Test-Path -LiteralPath $ConfigDir -PathType Container)) { throw "설정 폴더가 없습니다: $ConfigDir" }
+  $ConfigDir = (Resolve-Path -LiteralPath $ConfigDir).Path
+  $arg += " -ConfigDir `"$ConfigDir`""
+}
 Write-Output "작업 이름: $TaskName"
 Write-Output "실행: powershell.exe $arg"
+Write-Output ("설정 폴더(계정): " + $(if ($ConfigDir) { $ConfigDir } else { '기본 폴더(~\.claude) — 다른 계정이면 -ConfigDir 필요' }))
 Write-Output "시각: 매일 $Time (놓친 실행은 가능한 한 빨리 보충 · 전원 설정은 바꾸지 않음 · 중복 실행 안 함 · 제한 30분)"
 if ($existing) { Write-Output "※ 같은 이름의 작업이 이미 있습니다(-Apply 하면 덮어씁니다)." }
 if (-not $Apply) { Write-Output "[미리보기] 등록하지 않았습니다. 등록하려면 -Apply"; exit 0 }
