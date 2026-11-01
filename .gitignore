@@ -12,6 +12,9 @@ desktop.ini
 /DEV-STATUS.md
 **/.claude/settings.local.json
 
+# 시험용 입력 자료: tools/make-sample-inputs.py 가 만든다(안에 git 저장소와 일부러 넣은 .env 등이 있어 올리지 않는다)
+/fixtures/sample-inputs/
+
 # 실수로 올라가면 안 되는 비밀 파일
 .env
 .env.*
@@ -38,3 +41,9 @@ desktop.ini
 # 사이트에서 받은 실제 공고·기업 자료와 내려받은 파일이 저장소에 들어오지 않게
 *.hwp
 *.hwpx
+
+# 가짜 볼트에 배포한 스킬 사본·배포 기록·백업(원본은 skills\ 에 있다)
+/fixtures/test-vault/.claude/skills/*
+!/fixtures/test-vault/.claude/skills/.gitkeep
+/fixtures/test-vault/.claude/job-compass-deploy.json
+/fixtures/test-vault/.claude/_deploy-backup/

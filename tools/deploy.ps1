@@ -13,7 +13,7 @@
   - 볼트의 .claude\skills\ 안에 있는, 이 저장소에 없는 스킬(예: 기존 job-posting 이 아직 없을 때)은 건드리지 않는다.
 
 .PARAMETER Target
-  배포할 볼트 폴더. 예: C:\Users\...\yurim  (필수)
+  배포할 볼트 폴더. 예: C:\Users\...\내볼트  (필수)
 .PARAMETER Source
   스킬 원본 폴더. 기본은 이 스크립트 옆의 ..\skills
 .PARAMETER Apply

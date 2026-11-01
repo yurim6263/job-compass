@@ -6,7 +6,8 @@
       "Edit(Projects/SecondBrain/wiki/**)",
       "Edit(Projects/SecondBrain/output/**)",
       "WebFetch(domain:www.jobkorea.co.kr)",
-      "WebFetch(domain:www.saramin.co.kr)"
+      "WebFetch(domain:www.saramin.co.kr)",
+      "Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)"
     ],
     "deny": [
       "Edit(Notes/**)",
