@@ -125,9 +125,10 @@ def read_candidates(today):
         if not ln.lstrip().startswith("|"):
             continue
         c = J.split_row(ln)
+        if "상태" in c and "회사" in c:      # 표 머리(후보 표와 `후보함_지난` 표가 각각 있다) — 데이터 행으로 세지 않는다
+            cols = c
+            continue
         if cols is None:
-            if "상태" in c and "회사" in c:
-                cols = c
             continue
         if re.match(r"^[\s:-]+$", "".join(c)):
             continue
@@ -247,7 +248,7 @@ def render_today(b, now):
          "━" * 32]
     if b.get("empty") and not b["rows"]:
         cards = len(list(WIKI.glob("내경험_*.md"))) if WIKI.exists() else 0
-        L += ["현황표가 비어 있거나 없습니다 — 정상 진입입니다.", f"- 지금 있는 것: 경험 문서 {cards}개 · 현황표 0행 · 후보 {len(read_candidates(today))}건",
+        L += ["현황표가 비어 있거나 없습니다 — 정상 진입입니다.", f"- 지금 있는 것: 경험 문서 {cards}개 · 현황표 0행 · 후보 {sum(1 for c in read_candidates(today) if c.get('상태', '') in ('새로', '본문확보', '점수'))}건",
               "- 순서 제안: ① `/exp-intake`로 경험 넣기 → ② `/exp-organize`로 카드 만들기 → ③ 공고 링크로 `/job-posting`"]
         for w in b["warnings"]:
             L.append(f"- ⚠️ {w}")

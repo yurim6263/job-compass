@@ -7,7 +7,8 @@
 카드 형식은 references/card-format.md. 카드마다 판정을 낸다:
   PASS · DONE_WITH_CONCERNS(6단계 중 `[확인 필요]`가 남음) · FAIL(근거 없음·필수 항목 누락·비밀 노출 등)
 검사: 근거 링크가 실제 파일을 가리키는가 / 필수 필드 / 값 목록 / 수치 판정(O·△·X)과 `[수치 확인 필요]` /
-      수치·키워드가 근거 파일 본문에 있는가 / '내가'와 '팀이/우리가' 섞임 / 비밀·개인정보 / 받은교재 카드 여부
+      수치·키워드가 근거 파일 본문에 있는가 / '내가'와 '팀이/우리가' 섞임 / 모호한 상투 표현('다양한 경험'·'책임감' 등, 경고만) /
+      비밀·개인정보 / 받은교재 카드 여부
 종료 코드: 0 모두 통과(PASS 또는 DONE_WITH_CONCERNS) / 1 FAIL 있음 / 2 문서 형식 오류
 """
 import json
@@ -27,6 +28,15 @@ NEED = "[확인 필요]"
 NUM_NEED = "[수치 확인 필요]"
 LINK = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
 TEAM_WORDS = re.compile(r"(우리가|우리는|팀이|팀원들|팀 전체가)")
+# 모호한 상투 표현(문항·면접에서 근거로 못 쓰는 말) — 표현별로 "무엇이 빠졌는지"를 알려 준다
+VAGUE = [
+    (re.compile(r"다양한\s*(경험|활동|업무)"), "무엇을 했는지 특정되지 않음 — 실제 한 일 하나로 바꿀 것"),
+    (re.compile(r"책임감"), "마음가짐만 있고 행동이 안 보임 — 실제로 한 일로 바꿀 것"),
+    (re.compile(r"(소통|커뮤니케이션)\s*능력"), "누구와 무엇을 맞췄는지가 빠짐 — 조율한 내용으로 바꿀 것"),
+    (re.compile(r"(많은|값진)\s*(것|경험)을?\s*(배웠|얻었)"), "배웠다는 말은 결과가 아님 — 달라진 점으로 바꿀 것"),
+    (re.compile(r"(팀|프로젝트)에\s*기여"), "내 몫이 안 보임 — 내가 한 일 한 줄로 바꿀 것"),
+    (re.compile(r"열심히|최선을\s*다"), "노력 표현은 근거가 아님 — 한 일과 확인한 결과로 바꿀 것"),
+]
 
 
 def parse(text):
@@ -150,6 +160,12 @@ def check_card(card, vault, fm_origin):
     for k in ("role", "action"):
         if TEAM_WORDS.search(f.get(k, "")):
             concerns.append(f"{k}에 팀 주어('우리가/팀이')가 섞임 — 내 몫만 쓸 것")
+    # 모호한 상투 표현: 무엇을 했는지·내 몫·결과가 안 보이는 말은 면접에서 바로 꼬리질문을 받는다(경고만 한다, FAIL 아님)
+    for k in ("problem", "role", "action", "change"):
+        for pat, why in VAGUE:
+            m = pat.search(f.get(k, ""))
+            if m:
+                concerns.append(f"{k}에 모호한 표현 `{m.group(0)}` — {why}")
     # 비밀·개인정보
     hits = jc.scan_text(card["block"])
     if hits:

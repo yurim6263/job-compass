@@ -9,7 +9,8 @@
   python -I -X utf8 candidates.py set-score --id <공고 ID> --score "78 🟡" [--state 점수]
   python -I -X utf8 candidates.py list [--json] [--state 새로]
 
-후보 JSON(모델이 검색 결과를 정규화한 것): [{"company","title","url","id","deadline"(YYYY-MM-DD 또는 ""),"region","source"}]
+후보 JSON(모델이 검색 결과를 정규화한 것): [{"company","title","url","id","deadline"(YYYY-MM-DD 또는 ""),"region","source","query"}]
+  `query`(그 후보를 찾은 검색어)를 적으면 상한(N)에 걸릴 때 소스·검색어별로 번갈아 담는다(첫 검색어가 상한을 다 쓰지 않게).
 1차 선별은 점수가 아니다(기획 02 §6-④): 마감 지남 · 제목의 필수 경력("n년 이상") · 제목의 석사 이상 필수 ·
   제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함)를 거른다. 방향은 제목이 연결 직무 키워드와 맞는지로 `일치/약함`만 표시한다.
 쓰는 곳: 후보함, `_scan-log.md` 두 파일뿐. raw·wiki·현황표·Notes 는 건드리지 않는다.
@@ -187,9 +188,29 @@ def log_line(msg):
         f.write(f"- {now} · {msg}\n")
 
 
+def interleave(items):
+    """상한(N)이 첫 검색어 결과로 다 차 버리지 않게, 후보를 (소스, 검색어)별로 번갈아 한 건씩 놓는다. 같은 입력이면 같은 순서.
+    후보에 `query` 가 없으면(또는 한 묶음뿐이면) 받은 순서를 그대로 쓴다."""
+    groups, order = {}, []
+    for it in items:
+        key = (it.get("source", ""), it.get("query", ""))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(it)
+    if len(order) < 2:
+        return items
+    out = []
+    for i in range(max(len(g) for g in groups.values())):
+        for key in order:
+            if i < len(groups[key]):
+                out.append(groups[key][i])
+    return out
+
+
 def cmd_ingest(a):
     today = J.parse_date(a.today) if a.today else J.today_kst()
-    items = json.loads(Path(a.file).read_text(encoding="utf-8"))
+    items = interleave(json.loads(Path(a.file).read_text(encoding="utf-8")))
     cond = read_conditions()
     ids, raw_text = known_ids()
     main, past = load()

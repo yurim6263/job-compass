@@ -176,6 +176,72 @@ class CardVerifyTest(VaultCase):
         self.assertRegex(r.out, r"FAIL [1-9]")
 
 
+class VagueExpressionTest(VaultCase):
+    def verify_with_role(self, role):
+        text = self.read(CARD_DOC)
+        new = re.sub(r"(?m)^- role: .*$", "- role: " + role, text, count=1)
+        self.assertNotEqual(text, new)
+        self.write("Projects/SecondBrain/wiki/내경험_표현.md", new)
+        return self.run_script("verify_cards.py", "Projects/SecondBrain/wiki/내경험_표현.md")
+
+    def test_vague_phrases_are_warned_not_failed(self):
+        r = self.verify_with_role("다양한 경험을 통해 책임감을 가지고 소통 능력을 발휘해 많은 것을 배웠고 팀에 기여했다. 열심히 했다")
+        self.assertEqual(r.code, 0, "경고일 뿐이라 종료 코드는 0")
+        self.assertIn("DONE_WITH_CONCERNS", r.out)
+        for phrase in ("다양한 경험", "책임감", "소통 능력", "많은 것을 배웠", "팀에 기여", "열심히"):
+            self.assertIn(f"`{phrase}`", r.out)
+
+    def test_concrete_role_is_not_warned(self):
+        r = self.verify_with_role("센서 로그의 결측값 보간 규칙과 이상치 기준(평균 ±3표준편차)을 정했다")
+        self.assertNotIn("모호한 표현", r.out)
+
+
+class CandidatesTest(VaultCase):
+    def items(self, query, n, source="잡코리아"):
+        return [{"company": f"{query}사{i}", "title": f"{query} 엔지니어 {i}", "url": f"https://example.com/{query}/{i}", "id": f"{query}:{i}",
+                 "deadline": "", "region": "서울", "source": source, "query": query} for i in range(n)]
+
+    def set_limit(self, n):
+        cond = self.read("Areas/취업/검색 조건.md")
+        self.assertIn("| 후보 최대 N건 | 20 |", cond)
+        self.write("Areas/취업/검색 조건.md", cond.replace("| 후보 최대 N건 | 20 |", f"| 후보 최대 N건 | {n} |"))
+
+    def ingest(self, items):
+        self.write_json("Areas/취업/_scan-cache/c.json", items)
+        r = self.run_script("candidates.py", "ingest", "Areas/취업/_scan-cache/c.json")
+        self.assertEqual(r.code, 0, r.text)
+        return r
+
+    def test_limit_is_shared_between_queries_not_used_up_by_the_first(self):
+        self.set_limit(4)
+        self.ingest(self.items("예지보전", 5) + self.items("스마트팩토리", 5))       # 첫 검색어만으로 상한을 채울 수 있는 입력
+        board = self.read("Areas/취업/공고 후보함.md")
+        self.assertEqual(board.count("| 예지보전사"), 2)
+        self.assertEqual(board.count("| 스마트팩토리사"), 2)
+        self.assertIn("상한 초과", self.read("Areas/취업/_scan-log.md") + "상한 초과")   # 로그에는 '더 있음'이 남는다(아래에서 별도 확인)
+        self.assertIn("더 있음(상한 초과)", self.read("Areas/취업/_scan-log.md"))
+
+    def test_without_query_field_original_order_is_kept(self):
+        self.set_limit(3)
+        items = self.items("가", 4)
+        for it in items:
+            del it["query"]
+        self.ingest(items)
+        board = self.read("Areas/취업/공고 후보함.md")
+        self.assertEqual([board.count(f"| 가사{i} ") for i in range(4)], [1, 1, 1, 0])
+
+    def test_interleave_is_stable(self):
+        self.set_limit(20)
+        self.ingest(self.items("a", 2) + self.items("b", 2))
+        rows = [ln for ln in self.read("Areas/취업/공고 후보함.md").splitlines() if "엔지니어" in ln]
+        self.assertEqual(len(rows), 4)
+
+    def test_dashboard_counts_each_candidate_once(self):
+        self.ingest(self.items("a", 3))
+        r = self.run_script("dashboard.py", "today", "--today", "2026-11-01")
+        self.assertIn("후보 3건", r.out)                 # `후보함_지난` 표의 머리 줄을 후보로 세지 않는다
+
+
 class DashboardTest(VaultCase):
     def test_empty_table_is_a_normal_entry(self):
         r = self.run_script("dashboard.py", "today", "--today", "2026-11-01")

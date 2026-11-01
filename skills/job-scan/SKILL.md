@@ -1,7 +1,7 @@
 ---
 name: job-scan
 description: Areas/취업/검색 조건.md 의 조건으로 채용 사이트를 검색해 공고 후보를 모으고(중복·마감·필수 경력·석사 필수 제외), 후보함에 기록하고, 상위 몇 건은 본문을 받아 미리보기 점수를 낸다. 마감 캘린더와 오늘 현황도 갱신한다. "공고 찾아줘", "새 공고", "/job-scan"이라고 하면 쓴다. 현황표·raw·wiki는 만들지 않는다(그건 /job-posting).
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bash(perl:*), Bash(mkdir -p:*), Bash(date:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bash(perl:*), Bash(mkdir -p:*), Bash(date:*), Bash(sleep:*), Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)
 ---
 
 # /job-scan — 공고 후보 모으기 (수동 실행)
@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bas
 
 ## 단계
 1. **조건 읽기 + 오늘 날짜(KST) 확정** — `conditions` 출력(검색어 목록·연결 직무·제외 키워드·N·K).
-2. **소스별 검색** (`references/sources.md`에 소스·주소·주의) — 검색어마다 목록을 받아 후보를 **정규화**한다: `{company, title, url, id, deadline, region, source}`. 목록에 마감일이 없으면 `""`(후보함에 "마감 여부 미확인"으로 남는다). 공고 ID 규칙은 `/job-posting` 0단계와 같다. 한 소스가 막히거나 0건이어도 나머지는 계속한다.
+2. **소스별 검색** (`references/sources.md`에 소스·주소·주의) — 검색어마다 목록을 받아 후보를 **정규화**한다: `{company, title, url, id, deadline, region, source, query}`(`query` = 그 후보를 찾은 검색어. 상한 N에 걸릴 때 스크립트가 검색어·소스별로 번갈아 담는다 — 순서를 직접 섞지 않는다). 목록에 마감일이 없으면 `""`(후보함에 "마감 여부 미확인"으로 남는다). 공고 ID 규칙은 `/job-posting` 0단계와 같다. 한 소스가 막히거나 0건이어도 나머지는 계속한다.
 3. **후보 JSON 만들기** — `T/<오늘>-후보.json`에 Write(후보 목록 배열).
 4. **1차 선별 + 중복 제거 + 기록** — `python -I -X utf8 $S/candidates.py ingest Areas/취업/_scan-cache/<오늘>-후보.json` (`--dry`면 기록 없이 결과만). 스크립트가 마감 지남 · 제목의 필수 경력("n년 이상") · 제목의 석사 이상 필수 · 제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함)를 거르고 방향(`일치/약함`)을 표시하고 N건까지 후보함에 쓴다. **이것은 점수가 아니다.**
    - 같은 회사·같은 마감인데 ID가 다르면 `same_posting_maybe`로 알려 준다 — 합치지 않고 표시만(사용자가 결정).
