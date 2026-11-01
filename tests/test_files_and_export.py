@@ -236,6 +236,18 @@ class CandidatesTest(VaultCase):
         rows = [ln for ln in self.read("Areas/취업/공고 후보함.md").splitlines() if "엔지니어" in ln]
         self.assertEqual(len(rows), 4)
 
+    def test_career_hiring_titles_filtered_but_newcomer_kept(self):
+        titles = {"경1": "[A사] 설비 AI 경력채용", "경2": "데이터 엔지니어 경력직 모집", "경3": "[경력] 예지보전 개발",
+                  "경4": "MLOps 경력사원 채용", "신1": "설비 AI 신입/경력 채용", "신2": "데이터 분석(경력자 우대)",
+                  "신3": "스마트팩토리 개발 신입", "신4": "경력 무관 AI 엔지니어"}
+        items = [{"company": f"{k}사", "title": t, "url": f"https://example.com/{k}", "id": f"x:{k}", "deadline": "",
+                  "region": "서울", "source": "잡코리아", "query": "q"} for k, t in titles.items()]
+        self.ingest(items)
+        board = self.read("Areas/취업/공고 후보함.md")
+        for k in titles:
+            self.assertEqual(f"| {k}사 |" in board, k.startswith("신"), k)
+        self.assertIn("경력 제외 4", self.read("Areas/취업/_scan-log.md"))
+
     def test_dashboard_counts_each_candidate_once(self):
         self.ingest(self.items("a", 3))
         r = self.run_script("dashboard.py", "today", "--today", "2026-11-01")
