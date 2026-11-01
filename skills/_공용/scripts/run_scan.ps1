@@ -1,0 +1,70 @@
+﻿<#
+.SYNOPSIS
+  `/job-scan`을 무인으로 한 번 실행한다(작업 스케줄러가 부르는 래퍼). 결과는 파일에 남기고, 마감 임박·새 후보가 있으면 Windows 알림.
+.DESCRIPTION
+  - 볼트 폴더에서 `claude -p`를 돌린다. 무인 실행이라 허용 규칙을 **대화형보다 훨씬 좁게** 명시한다(아래 $allow/$deny).
+    쓰기 허용: Areas/취업/ 의 공고 후보함·_scan-cache·_scan-log·마감 캘린더·내보내기·오늘 현황·_widget·_백업 뿐.
+    금지: raw/ · wiki/ · output/ · Notes/ · .claude/ 수정, 삭제 명령, 메일·제출(그런 도구 자체를 허용하지 않음).
+  - 개인정보는 프롬프트·로그에 쓰지 않는다. 프롬프트에는 개인 내용이 없다.
+  - 신뢰하지 않은 작업 폴더에서는 .claude/settings.json 의 허용 규칙이 무시된다. 이 래퍼는 플래그로 규칙을 직접 준다.
+    그래도 처음 한 번은 볼트 폴더에서 Claude Code를 대화형으로 열어 폴더 신뢰를 수락해 두는 것이 안전하다(미시험).
+  - 실행이 밀려도(놓친 실행 보충) 결과가 틀리지 않게 `/job-scan`이 실행 시각 기준으로 D-n을 계산하고 로그에 실행 시각을 적는다.
+  - 미시험: 이 PC에서 무인(로그인하지 않은 상태 포함) 실행이 어느 계정으로 도는지, 사용량(%).
+.PARAMETER Vault
+  볼트 폴더(예: 가짜 볼트 fixtures\test-vault, 실제 볼트는 사용자가 정한 뒤).
+.PARAMETER DryRun
+  claude 를 부르지 않고 만들 명령과 허용 규칙만 출력한다.
+#>
+param(
+  [Parameter(Mandatory = $true)][string]$Vault,
+  [switch]$DryRun,
+  [int]$TimeoutMinutes = 30
+)
+$ErrorActionPreference = 'Stop'
+if (-not (Test-Path -LiteralPath $Vault -PathType Container)) { throw "볼트 폴더가 없습니다: $Vault" }
+$Vault = (Resolve-Path -LiteralPath $Vault).Path
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+$prompt = 'job-scan 스킬을 사용해 검색 조건 파일대로 공고 후보를 수집해 주세요. 무인 실행입니다: 질문하지 말고, 허용되지 않아 못 한 단계와 실패한 소스는 요약에 적으세요. 현황표·raw·wiki는 수정하지 마세요.'
+$allow = @(
+  'Skill', 'Read', 'Glob', 'Grep', 'WebFetch',
+  'Edit(Areas/취업/공고 후보함.md)', 'Edit(Areas/취업/_scan-log.md)', 'Edit(Areas/취업/_scan-cache/**)',
+  'Edit(Areas/취업/마감 캘린더.md)', 'Edit(Areas/취업/내보내기/**)', 'Edit(Areas/취업/오늘 현황.md)',
+  'Edit(Areas/취업/_widget/**)', 'Edit(Areas/취업/_백업/**)',
+  'Bash(python -I -X utf8 .claude/skills/_공용/scripts/*)', 'Bash(curl *)', 'Bash(perl *)', 'Bash(mkdir -p *)', 'Bash(date *)'
+)
+$deny = @(
+  'Edit(Projects/**)', 'Edit(Notes/**)', 'Edit(.claude/**)', 'Edit(Areas/취업/지원 현황.md)',
+  'Bash(rm *)', 'Bash(rmdir *)', 'Bash(del *)', 'PowerShell(Remove-Item *)'
+)
+$claudeArgs = @('-p', $prompt, '--permission-mode', 'acceptEdits', '--allowedTools') + $allow + @('--disallowedTools') + $deny
+
+$log = Join-Path $Vault 'Areas\취업\_scan-log.md'
+$start = Get-Date
+if ($DryRun) {
+  Write-Output "[미리보기] 볼트: $Vault"
+  Write-Output "[미리보기] claude $($claudeArgs -join ' ')"
+  exit 0
+}
+$claude = (Get-Command claude -ErrorAction Stop).Source
+Push-Location $Vault
+try {
+  $job = Start-Job -ScriptBlock { param($c, $a, $v) Set-Location $v; & $c @a 2>&1 | Out-String } -ArgumentList $claude, $claudeArgs, $Vault
+  if (-not (Wait-Job $job -Timeout ($TimeoutMinutes * 60))) { Stop-Job $job; $result = "시간 초과($TimeoutMinutes 분)로 중단"; $code = 1 }
+  else { $result = (Receive-Job $job); $code = 0 }
+  Remove-Job $job -Force
+} finally { Pop-Location }
+$line = "- $($start.ToString('yyyy-MM-dd HH:mm')) · 무인 실행 종료(소요 $([int]((Get-Date) - $start).TotalSeconds)초, 코드 $code)"
+if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $log -Value $line -Encoding UTF8 }
+
+# 알림: 마감 임박·새 후보 (오늘 현황.json 기준)
+$json = Join-Path $Vault 'Areas\취업\_widget\오늘 현황.json'
+if (Test-Path -LiteralPath $json) {
+  $d = Get-Content -LiteralPath $json -Raw -Encoding UTF8 | ConvertFrom-Json
+  $urgent = [int]$d.counts.urgent; $cands = [int]$d.counts.new_candidates; $over = [int]$d.counts.overdue
+  if ($urgent -gt 0 -or $cands -gt 0 -or $over -gt 0) {
+    $msg = "마감 임박 $urgent건 · 마감 지난 지원 전 $over건 · 새 후보 $cands건 — 채용공고를 확인하세요"
+    & (Join-Path $here 'notify.ps1') -Title '채용 현황' -Message $msg | Out-Null
+  }
+}
+Write-Output $result
