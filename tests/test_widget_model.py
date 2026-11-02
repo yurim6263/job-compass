@@ -115,6 +115,16 @@ class ModelTest(unittest.TestCase):
         msg, _ = model.notify_decision(st5, {**d4, "generated_at": "2026-11-03T09:00"}, s(fail=True))
         self.assertIsNone(msg, "실패가 이어지면 다시 알리지 않음")
 
+    def test_catchup_needed(self):
+        today_scan = {"last_scan": {"at": "2026-11-03 08:00", "code": 0}}
+        old_scan = {"last_scan": {"at": "2026-11-02 08:00", "code": 0}}
+        self.assertFalse(model.catchup_needed(today_scan, datetime(2026, 11, 3, 10, 0)), "오늘 수집했으면 안 함")
+        self.assertFalse(model.catchup_needed(old_scan, datetime(2026, 11, 3, 8, 10)), "예약 시각+20분 전에는 기다림")
+        self.assertTrue(model.catchup_needed(old_scan, datetime(2026, 11, 3, 9, 0)))
+        self.assertTrue(model.catchup_needed({}, datetime(2026, 11, 3, 9, 0)), "기록이 전혀 없어도 보충")
+        self.assertFalse(model.catchup_needed(old_scan, datetime(2026, 11, 3, 9, 0), "2026-11-03"), "하루 한 번만")
+        self.assertFalse(model.catchup_needed(old_scan, datetime(2026, 11, 3, 7, 0)))
+
     def test_d_label(self):
         today = date(2026, 11, 2)
         self.assertEqual(model.d_label("2026-11-05", today), "11/05 (D-3)")

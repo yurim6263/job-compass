@@ -200,6 +200,24 @@ def notify_decision(prev, data, summary):
     return msg, cur
 
 
+def catchup_needed(data, now, last_trigger_day=None, scan_time="08:00", grace_min=20):
+    """놓친 수집 보충이 필요한가(W4). 조건을 모두 만족할 때만 True:
+    - 오늘 수집 기록(last_scan.at 의 날짜)이 없음 · 지금이 예약 시각 + grace_min 이후(작업 스케줄러의 자체 보충을 먼저 기다림)
+    - 위젯이 오늘 이미 보충을 시작하지 않았음(last_trigger_day) — 하루 한 번만"""
+    today = now.date().isoformat()
+    if last_trigger_day == today:
+        return False
+    scan = (data or {}).get("last_scan") or {}
+    if str(scan.get("at", ""))[:10] == today:
+        return False
+    try:
+        hh, mm = (int(x) for x in scan_time.split(":"))
+    except ValueError:
+        hh, mm = 8, 0
+    due = now.replace(hour=hh, minute=mm, second=0, microsecond=0) + timedelta(minutes=grace_min)
+    return now >= due
+
+
 def d_label(deadline, today):
     try:
         d = datetime.strptime(deadline, "%Y-%m-%d").date()

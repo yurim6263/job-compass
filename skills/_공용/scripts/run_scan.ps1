@@ -69,6 +69,14 @@ try {
 $line = "- $($start.ToString('yyyy-MM-dd HH:mm')) · 무인 실행 종료(소요 $([int]((Get-Date) - $start).TotalSeconds)초, 코드 $code)"
 if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $log -Value $line -Encoding UTF8 }
 
+# 끝난 기록을 남긴 뒤 오늘 현황(.md·.json)을 한 번 더 만든다 — 수집 중에 만든 사본은 이번 실행의 "종료" 줄을 모르므로
+# 위젯의 "마지막 수집"이 한 번 늦게 보이던 문제를 막는다(2026-11-02). 현황표·후보함은 고치지 않는 읽기 전용 스크립트다.
+$py = (Get-Command python -ErrorAction SilentlyContinue).Source
+if ($py) {
+  Push-Location $Vault
+  try { & $py -I -X utf8 (Join-Path $here 'dashboard.py') today --write | Out-Null } catch { } finally { Pop-Location }
+}
+
 # 알림: 마감 임박·새 후보 (오늘 현황.json 기준)
 # 알림 위젯(apps/widget)이 켜져 있으면(3분 안에 heartbeat 갱신) 위젯이 알림을 맡으므로 여기서는 띄우지 않는다(중복 방지)
 $json = Join-Path $Vault 'Areas\취업\_widget\오늘 현황.json'

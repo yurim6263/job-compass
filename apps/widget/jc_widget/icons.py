@@ -119,7 +119,8 @@ def paint_tab(p, w, h, side, state, mark, lines, expanded, pad=5, alpha=None):
     # 나침반 + 상태
     tip = STATE_COLOR.get(state)
     r = bh * 0.27
-    cx = (bh * 0.55) if side == "right" else (w - bh * 0.55)
+    inset = bh * (0.55 if expanded else 0.47)          # 접혔을 때는 나침반을 화면 끝 쪽으로 붙여 덜 튀어나오게
+    cx = inset if side == "right" else (w - inset)
     cy = pad + bh / 2
     compass(p, cx, cy, r, INK, tip, max(1.3, r * 0.17))
     if tip and not expanded:

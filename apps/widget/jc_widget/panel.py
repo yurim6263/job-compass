@@ -27,11 +27,11 @@ def score_tone(sc):
 
 
 class GlassPanel(QWidget):
-    def __init__(self, opener, on_refresh):
+    def __init__(self, opener, on_refresh, on_scan=None):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
-        self.opener, self.on_refresh = opener, on_refresh
+        self.opener, self.on_refresh, self.on_scan = opener, on_refresh, on_scan
         self.view, self.problem = None, None
         self.hits = []                 # [(QRectF, 종류, 값)]
         self.hidden_at = 0.0
@@ -114,6 +114,14 @@ class GlassPanel(QWidget):
         v = self.view or {}
         y = 14.0
         self._text(p, PAD, y, 200, "취업 현황", 16, INK, True)
+        # 지금 수집 버튼(W4) — 수집 중이면 회색 글자만
+        scanning = v.get("scanning")
+        label = "수집 중…" if scanning else "지금 수집"
+        bx = PAD + 84
+        bw = self._chip(None, 0, 0, label, "blue", 10)
+        self._chip(p, bx, y + 2, label, "grey" if scanning else "blue", 10)
+        if not scanning and self.on_scan:
+            self.hits.append((QRectF(bx, y + 2, bw, 18), "scan", None))
         self._text(p, PAD, y + 2, W - PAD * 2 - 26, f"{v.get('generated', '?')} 기준", 11, SUB, False, Qt.AlignRight)
         rr = QRectF(W - PAD - 20, y, 22, 22)
         self.hits.append((rr, "refresh", None))
@@ -261,7 +269,7 @@ class GlassPanel(QWidget):
 
     def mouseMoveEvent(self, e):
         kind, val = self._hit(e.position())
-        self.setCursor(Qt.PointingHandCursor if kind in ("link", "doc", "refresh") else Qt.ArrowCursor)
+        self.setCursor(Qt.PointingHandCursor if kind in ("link", "doc", "refresh", "scan") else Qt.ArrowCursor)
         if kind == "tip":
             QToolTip.showText(e.globalPosition().toPoint(), val, self)
         else:
@@ -277,6 +285,9 @@ class GlassPanel(QWidget):
             self.opener.open_doc(val)
         elif kind == "refresh":
             self.on_refresh()
+        elif kind == "scan" and self.on_scan:
+            self.hide()
+            self.on_scan()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
