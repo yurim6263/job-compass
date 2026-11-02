@@ -100,6 +100,76 @@ def tab_view(summary, has_data=True):
     return state, mark, first, second
 
 
+STEP_NAMES = ["공고", "점수", "조사", "자소서", "방어맵", "면접"]
+
+
+def _days(deadline, today):
+    try:
+        return (datetime.strptime(deadline, "%Y-%m-%d").date() - today).days
+    except (TypeError, ValueError):
+        return None
+
+
+def _score(score_text):
+    """'62 🟡 🚫경력 필수' → (62, '🚫경력 필수'), '미산출 …' → (None, '미산출'), '' → (None, '')"""
+    t = (score_text or "").strip()
+    gate = ""
+    if "🚫" in t:
+        gate = "🚫" + t.split("🚫", 1)[1].strip()
+    head = t.split()[0] if t else ""
+    if head.isdigit():
+        return int(head), gate
+    return None, ("미산출" if t.startswith("미산출") else gate)
+
+
+def step_done(v):
+    v = (v or "").strip()
+    return bool(v) and not v.startswith("✗") and v not in ("링크 끊김", "점수없음")
+
+
+def panel_view(data, summary, today=None, max_cands=3, max_prog=4, max_actions=2):
+    """현황 창(A안)에 그릴 내용. 화면과 상관없는 정리만 한다(시험 가능)."""
+    today = today or datetime.now().date()
+    d = data or {}
+    s = summary
+    urgent_n = s.get("urgent", 0) + s.get("overdue", 0)
+    stats = [("마감 임박", urgent_n, "amber", urgent_n > 0),
+             ("오늘 새 후보", s.get("new_today", 0), "coral", s.get("new_today", 0) > 0),
+             ("진행 중", s.get("in_progress", 0), "blue", False)]
+    alerts = []
+    for i in d.get("overdue", []):
+        alerts.append(("red", f"마감 지남 · {i.get('company', '')} — 아직 지원 전 [{i.get('state', '')}]"))
+    for i in d.get("wait_result", []):
+        alerts.append(("amber", f"결과 확인 · {i.get('company', '')} — 마감이 지났어요"))
+    for i in sorted(d.get("urgent", []), key=lambda x: x.get("deadline") or "9999")[:1]:
+        n = _days(i.get("deadline"), today)
+        dl = ("D-day" if n == 0 else f"D-{n}") if n is not None and n >= 0 else "마감 임박"
+        alerts.append(("amber", f"{i.get('company', '')} 서류마감 {dl} — {i.get('state', '')}"))
+    cands = []
+    for c in d.get("new_candidates", [])[:max_cands]:
+        sc, gate = _score(c.get("score"))
+        cands.append({"company": c.get("company", ""), "title": c.get("title") or c.get("direction", ""), "score": sc,
+                      "gate": gate, "deadline": d_label(c.get("deadline"), today), "link": safe_web_link(c.get("link"))})
+    prog = []
+    for i in d.get("in_progress", [])[:max_prog]:
+        n = _days(i.get("deadline"), today)
+        tone = "red" if n is not None and n < 0 else ("amber" if n is not None and n <= 7 else "grey")
+        st = i.get("steps") or {}
+        prog.append({"company": i.get("company", ""), "state": i.get("state", ""), "deadline": d_label(i.get("deadline"), today),
+                     "tone": tone, "steps": [step_done(st.get(k)) for k in STEP_NAMES],
+                     "steps_tip": " · ".join(f"{k} {st.get(k, '—')}" for k in STEP_NAMES), "doc": i.get("doc")})
+    actions = [f"{a.get('company', '')} — {str(a.get('do', '')).replace('`', '')}" for a in d.get("next_actions", [])[:max_actions]]
+    scan = s.get("last_scan", "기록 없음")
+    foot = f"수집 {scan}" + (f" · 노션 {'켜짐' if s.get('notion') == 'on' else '꺼짐'}")
+    if s.get("notion_pending"):
+        foot += f" · 밀린 반영 {s['notion_pending']}"
+    files = d.get("files") or {}
+    return {"stats": stats, "alerts": alerts[:3], "cands": cands, "more": max(0, s.get("new_total", 0) - len(cands)),
+            "prog": prog, "prog_more": max(0, len(d.get("in_progress", [])) - len(prog)), "actions": actions,
+            "foot": foot, "files": {k: files.get(k) for k in ("candidates", "today")},
+            "notes": s.get("notes", []), "generated": s.get("generated", "?")}
+
+
 def d_label(deadline, today):
     try:
         d = datetime.strptime(deadline, "%Y-%m-%d").date()
@@ -158,6 +228,23 @@ def clamp_position(pos, size, screens):
             if sx <= x and sy <= y and x + w <= sx + sw and y + h <= sy + sh:
                 return x, y
     return default_position(size, screens[0])
+
+
+def panel_position(size, screen, anchor, side, gap=2):
+    """현황 패널 자리. size=(w,h), screen=(x,y,w,h) 작업 영역, anchor=(탭 y, 탭 높이) 또는 None, side=탭이 붙은 쪽.
+    가로: 탭과 같은 화면 끝에 딱 붙임. 세로: 탭 바로 위, 위쪽이 모자라면 탭 바로 아래, 그래도 안 되면 화면 안으로 맞춤."""
+    w, h = size
+    sx, sy, sw, sh = screen
+    x = sx if side == "left" else sx + sw - w
+    if anchor is None:
+        return x, sy + sh - h
+    ty, th = anchor
+    y = ty - h - gap
+    if y < sy:
+        y = ty + th + gap
+        if y + h > sy + sh:
+            y = sy + sh - h
+    return x, max(sy, y)
 
 
 def dock_to_side(pos, size, screen):

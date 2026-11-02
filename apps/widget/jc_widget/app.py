@@ -1,145 +1,17 @@
-"""위젯 화면(PySide6): 작업 표시줄 알림 영역 아이콘 + 오늘 현황 창. 단계 W1(docs/widget-plan.md §7).
+"""위젯 화면(PySide6): 작업 표시줄 알림 영역 아이콘 + 화면 끝 유리 탭 + 현황 유리 패널(panel.py). docs/widget-plan.md §7.
 
 읽기만 한다: 볼트의 `오늘 현황.json`. 쓰는 것은 위젯 설정(%APPDATA%)뿐이다.
 """
 import sys
-from datetime import date
-from functools import partial
 
 from PySide6.QtCore import QFileSystemWatcher, QLockFile, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QPainter
-from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton,
-                               QScrollArea, QSystemTrayIcon, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from . import icons, model, settings
+from .panel import GlassPanel
 
 APP_NAME = "job-compass 알림"
-INK, MUTED, WARN, ERR, ACCENT = "#1f2328", "#59636e", "#9a6700", "#cf222e", "#0969da"
-BADGE = "#d6336c"      # 숫자 배지: 진한 분홍(사용자 요청)
-
-
-# ---------- 창 ----------
-class StatusWindow(QWidget):
-    def __init__(self, opener):
-        super().__init__(None, Qt.Window | Qt.WindowStaysOnTopHint)
-        self.opener = opener
-        self.setWindowTitle("취업 현황")
-        self.setMinimumSize(460, 360)
-        self.resize(540, 600)
-        self.setStyleSheet(f"QWidget {{ background: #ffffff; color: {INK}; font-family: 'Malgun Gothic', 'Segoe UI'; font-size: 10pt; }}"
-                           "QPushButton { padding: 2px 8px; border: 1px solid #d0d7de; border-radius: 4px; background: #f6f8fa; }"
-                           "QPushButton:hover { background: #eaeef2; }")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        outer.addWidget(self.scroll)
-
-    def _label(self, text, color=INK, bold=False, size=None):
-        lb = QLabel(text)
-        lb.setWordWrap(True)
-        lb.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        css = f"color: {color};" + (" font-weight: bold;" if bold else "") + (f" font-size: {size}pt;" if size else "")
-        lb.setStyleSheet(css)
-        return lb
-
-    def _row(self, lay, text, buttons=(), color=INK):
-        row = QHBoxLayout()
-        row.addWidget(self._label(text, color), 1)
-        for name, cb in buttons:
-            b = QPushButton(name)
-            b.clicked.connect(cb)
-            row.addWidget(b, 0, Qt.AlignTop)
-        lay.addLayout(row)
-
-    def _section(self, lay, title):
-        lay.addSpacing(6)
-        lay.addWidget(self._label(title, bold=True, size=11))
-
-    def render(self, data, summary, problem):
-        body = QWidget()
-        lay = QVBoxLayout(body)
-        lay.setContentsMargins(16, 14, 16, 14)
-        lay.setSpacing(4)
-        s = summary
-        lay.addWidget(self._label(f"취업 현황 · {s['generated']} 기준", bold=True, size=13))
-        if problem:
-            lay.addWidget(self._label("⚠️ " + problem, WARN))
-        for level, text in s["notes"]:
-            lay.addWidget(self._label(("⛔ " if level == "error" else "⚠️ ") + text, ERR if level == "error" else WARN))
-        if data:
-            today = date.today()
-            od = self.opener
-
-            def btns(it):
-                out = []
-                if it.get("doc"):
-                    out.append(("문서", partial(od.open_doc, it["doc"])))
-                return out
-
-            self._section(lay, "⚠️ 먼저 볼 것")
-            first = [(f"마감이 지났는데 지원 전: {i['company']} · {model.d_label(i.get('deadline'), today)} [{i['state']}]", i)
-                     for i in data.get("overdue", [])]
-            first += [(f"결과 확인 필요: {i['company']} · {model.d_label(i.get('deadline'), today)} [{i['state']}]", i)
-                      for i in data.get("wait_result", [])]
-            for text, it in first:
-                self._row(lay, text, btns(it), ERR)
-            if not first:
-                lay.addWidget(self._label("없음", MUTED))
-
-            self._section(lay, "📅 마감 임박")
-            for i in data.get("urgent", []):
-                self._row(lay, f"{i['company']} · {i.get('job', '')} · {model.d_label(i.get('deadline'), today)} · [{i['state']}] · 적합도 {i.get('fit') or '—'}",
-                          btns(i))
-            if not data.get("urgent"):
-                lay.addWidget(self._label("없음", MUTED))
-
-            self._section(lay, f"🆕 새 후보 (오늘 {s['new_today']} · 전체 {s['new_total']})")
-            for c in data.get("new_candidates", []):
-                link = model.safe_web_link(c.get("link"))
-                score = c.get("score") or "점수 없음"
-                title = c.get("title") or c.get("direction", "")
-                self._row(lay, f"{c['company']} · {title} · {score} · {model.d_label(c.get('deadline'), today)}",
-                          [("공고", partial(od.open_link, link))] if link else [])
-            if not data.get("new_candidates"):
-                lay.addWidget(self._label("없음", MUTED))
-
-            self._section(lay, f"▶ 진행 중 ({s['in_progress']})")
-            for i in data.get("in_progress", []):
-                self._row(lay, f"{i['company']} · [{i['state']}] · {model.d_label(i.get('deadline'), today)}\n    {model.steps_text(i.get('steps'))}",
-                          btns(i))
-            if not data.get("in_progress"):
-                lay.addWidget(self._label("없음", MUTED))
-
-            self._section(lay, "다음 할 일")
-            for n, a in enumerate(data.get("next_actions", []), 1):
-                lay.addWidget(self._label(f"{n}. {a.get('company', '')} — {a.get('do', '')}  ({a.get('why', '')})"))
-            if not data.get("next_actions"):
-                lay.addWidget(self._label("없음", MUTED))
-
-            lay.addSpacing(8)
-            line = QFrame()
-            line.setFrameShape(QFrame.HLine)
-            line.setStyleSheet("color: #d0d7de;")
-            lay.addWidget(line)
-            files = data.get("files", {}) or {}
-            foot = []
-            if files.get("candidates"):
-                foot.append(("후보함", partial(od.open_doc, files["candidates"])))
-            if files.get("today"):
-                foot.append(("오늘 현황", partial(od.open_doc, files["today"])))
-            notion = f"노션 {'켜짐' if s['notion'] == 'on' else '꺼짐'} · 밀린 반영 {s['notion_pending']}"
-            self._row(lay, f"{notion} · 마지막 수집 {s['last_scan']}", foot, MUTED)
-        lay.addStretch(1)
-        self.scroll.setWidget(body)
-
-    def show_near_tray(self):
-        scr = QApplication.primaryScreen().availableGeometry()
-        self.move(scr.right() - self.width() - 12, scr.bottom() - self.height() - 12)
-        self.show()
-        self.raise_()
-        self.activateWindow()
 
 
 # ---------- 화면 끝 유리 캡슐 탭 (W2, 2026-11-02 디자인 확정) ----------
@@ -329,7 +201,7 @@ class WidgetApp:
         self.cfg = settings.load()
         self.data, self.problem = None, None
         self.opener = Opener(self)
-        self.win = StatusWindow(self.opener)
+        self.win = GlassPanel(self.opener, self.reload)
         self.tray = QSystemTrayIcon(icons.tray_icon("none", light_taskbar()))
         menu = QMenu()
         for text, cb in (("현황 열기", self.show_window), ("다시 읽기", self.reload), ("볼트 폴더 바꾸기…", self.choose_vault)):
@@ -370,7 +242,7 @@ class WidgetApp:
     def toggle_window(self):
         if self.win.isVisible():
             self.win.hide()
-        else:
+        elif not self.win.just_hidden():          # 바깥 클릭으로 방금 닫혔으면 다시 열지 않음
             self.show_window()
 
     # 떠 있는 아이콘 보이기·지우기·위치 저장 (설정 파일에만)
@@ -397,7 +269,8 @@ class WidgetApp:
 
     def show_window(self):
         self.reload()
-        self.win.show_near_tray()
+        tab = self.floating
+        self.win.show_near(tab.geometry() if tab.isVisible() else None, tab.side)
 
     def choose_vault(self):
         d = QFileDialog.getExistingDirectory(None, "job-compass를 쓰는 볼트 폴더를 고르세요", self.cfg.get("vault") or "")
@@ -433,7 +306,7 @@ class WidgetApp:
         self.tray.setIcon(icons.tray_icon(state, light_taskbar()))
         self.tray.setToolTip(tip)
         self.floating.set_state(state, mark, (first, second), s["badge"], tip + "\n(끌어서 옮기기 · 우클릭: 메뉴)")
-        self.win.render(self.data, s, self.problem)
+        self.win.set_view(model.panel_view(self.data, s), self.problem)
         self.watch()
 
 

@@ -66,6 +66,32 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(model.tab_view({**base, "notes": [("error", "x")]})[:3], ("fail", "!", "수집 실패"))
         self.assertEqual(model.tab_view({}, has_data=False)[0], "fail")
 
+    def test_panel_view(self):
+        data = {"overdue": [{"company": "가사", "state": "Not started"}],
+                "urgent": [{"company": "나사", "deadline": "2026-11-05", "state": "자소서 작성중"},
+                           {"company": "다사", "deadline": "2026-11-04", "state": "Not started"}],
+                "new_candidates": [{"company": "A사", "title": "설비 AI", "score": "62 🟡 🚫경력 필수", "deadline": None,
+                                    "link": "https://a.example/1"},
+                                   {"company": "B사", "title": "데이터", "score": "", "deadline": "2026-11-20", "link": "javascript:x"}],
+                "in_progress": [{"company": "나사", "state": "자소서 작성중", "deadline": "2026-11-05", "doc": "w/a.md",
+                                 "steps": {"공고": "✓", "점수": "✓", "조사": "✗", "자소서": "작성중", "방어맵": "✗", "면접": "2회"}}],
+                "next_actions": [{"company": "나사", "do": "`/cover-letter 첨삭`"}], "files": {"candidates": "c.md", "today": "t.md"}}
+        s = {"urgent": 2, "overdue": 1, "new_today": 2, "new_total": 7, "in_progress": 1, "notion": "on", "notion_pending": 1,
+             "last_scan": "11/02 08:00 성공", "notes": [], "generated": "11/02 09:44"}
+        v = model.panel_view(data, s, today=date(2026, 11, 2))
+        self.assertEqual(v["stats"][0][:2], ("마감 임박", 3))
+        self.assertTrue(v["stats"][0][3])
+        self.assertEqual([t for t, _ in v["alerts"]], ["red", "amber"])
+        self.assertIn("다사 서류마감 D-2", v["alerts"][1][1], "가장 가까운 마감 하나")
+        self.assertEqual((v["cands"][0]["score"], v["cands"][0]["gate"]), (62, "🚫경력 필수"))
+        self.assertIsNone(v["cands"][1]["score"])
+        self.assertIsNone(v["cands"][1]["link"], "http(s) 아닌 링크는 버림")
+        self.assertEqual(v["more"], 5)
+        self.assertEqual(v["prog"][0]["steps"], [True, True, False, True, False, True])
+        self.assertEqual(v["prog"][0]["tone"], "amber")
+        self.assertEqual(v["actions"], ["나사 — /cover-letter 첨삭"])
+        self.assertEqual(v["foot"], "수집 11/02 08:00 성공 · 노션 켜짐 · 밀린 반영 1")
+
     def test_d_label(self):
         today = date(2026, 11, 2)
         self.assertEqual(model.d_label("2026-11-05", today), "11/05 (D-3)")
@@ -99,6 +125,14 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(model.dock_to_side((1500, 1100), (48, 48), scr), (1872, 992), "화면 아래로 끌어도 안으로")
         self.assertEqual(model.dock_to_side((2900, 400), (48, 48), (1920, 0, 1280, 984)), (3152, 400), "보조 모니터 오른쪽 절반")
         self.assertEqual(model.dock_to_side((2300, 400), (48, 48), (1920, 0, 1280, 984)), (1920, 400), "보조 모니터 왼쪽 절반")
+
+    def test_panel_above_tab_at_edge(self):
+        scr = (0, 0, 1536, 816)
+        self.assertEqual(model.panel_position((340, 590), scr, (700, 52), "right"), (1196, 108), "오른쪽 끝, 탭 바로 위")
+        self.assertEqual(model.panel_position((340, 590), scr, (700, 52), "left"), (0, 108), "왼쪽 끝")
+        self.assertEqual(model.panel_position((340, 590), scr, (100, 52), "right"), (1196, 154), "위가 모자라면 탭 아래")
+        self.assertEqual(model.panel_position((340, 590), scr, (300, 52), "right"), (1196, 226), "위·아래 다 모자라면 화면 안으로")
+        self.assertEqual(model.panel_position((340, 590), scr, None, "right"), (1196, 226))
 
     def test_settings_roundtrip_keeps_defaults(self):
         p = self.vault / "s.json"
