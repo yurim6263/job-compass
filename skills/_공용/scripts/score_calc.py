@@ -20,6 +20,7 @@
   배점 A 자격(Q) 45 · B 우대(P) 15 · C 사용 기술 15 · D 직무 방향 15 · E 지역 10 (합계 100)
   A·B: 증명 1.0 · 부분 0.5 · 갭 0 · 안내는 제외. 점수 = 배점 × Σ(값×근거 배수) ÷ (안내 제외 개수)
   근거 배수: 카드 fact_status 자료확인 ×1.0 · 본인진술 ×0.8 · 미확인 ×0(그 카드는 근거로 쓰지 않음). 인용 카드가 여럿이면 가장 높은 배수
+  교육 이수 정리(wiki/교육이수_*.md 의 edu-… id)도 인용할 수 있다: 교육 이수만 인용한 증명은 부분으로 내리고, 사용 기술 낱말이 교육 이수에만 있으면 ×0.5
   C: 공고 기술 낱말 중 (미확인이 아닌) 카드 keywords 에 있는 것 ÷ 전체. 대소문자·띄어쓰기만 정규화. 동의어 추정 없음. 낱말마다 근거 배수 적용
   D: 제조AI·CBM시스템개발자·LLM응용 15 / 데이터 8 / 그 밖 0.  E: 서울·경기·원격 10 / 대구·부산·울산·포항 7 / 그 밖 3 / null 이면 제외
   증명인데 요건이 수치를 요구하고(needs_numbers) 인용 카드 중 numbers 판정 O 가 없으면 → 부분으로 내린다
@@ -37,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import jc_job as J  # noqa: E402
 import verify_cards as VC  # noqa: E402
+import course_tools as CT  # noqa: E402
 
 WEIGHTS = {"A": 45, "B": 15, "C": 15, "D": 15, "E": 10}
 VERDICT = {"증명": 1.0, "부분": 0.5, "갭": 0.0}
@@ -64,6 +66,11 @@ def load_cards(wiki_dir=Path("Projects/SecondBrain/wiki")):
             kws = VC.list_value(f.get("keywords", ""))
             cards[c["id"]] = {"id": c["id"], "fact": f.get("fact_status", ""), "origin": f.get("origin", ""),
                               "numbers": f.get("numbers", "").strip(), "keywords": kws, "doc": p.name}
+    # 교육 이수 정리(edu-…): 배운 것 — 인용해도 최대 '부분', 사용 기술은 절반만(references/course-format.md)
+    for c in CT.load_courses(wiki_dir):
+        kws = [k for sk in c["skills"] for k in CT.skill_keywords(sk["name"])]
+        cards[c["id"]] = {"id": c["id"], "fact": c["fact"], "origin": "교육과정", "numbers": "", "keywords": kws,
+                          "doc": c["doc"], "edu": True}
     return cards
 
 
@@ -85,6 +92,9 @@ def item_value(item, cards, errs):
     if v in ("증명", "부분") and not used:
         errs.append(f"{item.get('id')}: {v} 판정인데 인용한 카드가 없음 — 근거 없는 판정")
         return 0.0, "갭", notes + ["인용 카드 없음 → 갭 처리"]
+    if v == "증명" and used and all(c.get("edu") for c in used):
+        v = "부분"
+        notes.append("교육 이수만 인용 — 배운 것은 증명이 아니라 부분으로 셈")
     if v == "증명" and item.get("needs_numbers") and not any(c["numbers"].startswith("O") for c in used):
         v = "부분"
         notes.append("요건이 수치를 요구하는데 numbers 판정 O 카드가 없어 증명→부분으로 내림")
@@ -121,7 +131,7 @@ def score_tech(tech, cards, errs):
         for c in usable:
             if norm(t) in [norm(k) for k in c["keywords"]]:
                 by.append(c["id"])
-                best = max(best, MULT[c["fact"]])
+                best = max(best, MULT[c["fact"]] * (0.5 if c.get("edu") else 1.0))
         rows.append({"tech": t, "matched": bool(by), "cards": by, "mult": best})
         got += best
     return rows, WEIGHTS["C"] * got / len(tech)

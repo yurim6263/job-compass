@@ -315,6 +315,25 @@ def rows_cards(today):
             put(p, "근거 상태", "근거 있음" if fact == "자료확인" else ("일부 확인 필요" if fact else None))
             put_date(p, "볼트 반영일", today.isoformat())
             items.append({"key": c["id"], "props": p})
+    # 교육 이수 정리도 '[교육]' 줄로(배운 기술 요약만)
+    try:
+        import course_tools as CT
+        courses = CT.load_courses(WIKI)
+    except Exception:          # noqa: BLE001 — 형식이 깨진 파일이 있어도 카드 반영은 막지 않는다
+        courses = []
+    for c in courses:
+        lv = {k: [s["name"] for s in c["skills"] if s["level"] == k] for k in ("과제", "실습", "수강")}
+        summary = " · ".join(f"{k}: {', '.join(v[:4])}" + (" 외" if len(v) > 4 else "") for k, v in lv.items() if v)
+        p = {}
+        put(p, "카드 제목", f"[교육] {c['title']}")
+        put(p, "카드 ID", c["id"])
+        put(p, "프로젝트", c["institution"])
+        put(p, "기간", c["period"])
+        put(p, "직무 태그", [t for t in c["tags"] if t in CARD_TAGS])
+        put(p, "한 줄 요약", summary)
+        put(p, "근거 상태", "근거 있음" if c["fact"] == "자료확인" else ("일부 확인 필요" if c["fact"] else None))
+        put_date(p, "볼트 반영일", today.isoformat())
+        items.append({"key": c["id"], "props": p})
     return items
 
 
