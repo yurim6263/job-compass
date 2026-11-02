@@ -70,6 +70,36 @@ def summarize(data, now=None):
             "notes": notes}
 
 
+def mood(summary):
+    """아이콘 표정: 수집 실패 > 마감 임박(지난 것 포함) > 오늘 새 후보 > 새 소식 없음(쿨쿨)"""
+    if any(level == "error" for level, _ in summary.get("notes", [])):
+        return "fail"
+    if summary.get("urgent") or summary.get("overdue"):
+        return "urgent"
+    if summary.get("new_today"):
+        return "new"
+    return "sleep"
+
+
+def tab_view(summary, has_data=True):
+    """화면 끝 탭·작업 표시줄에 보일 것: (상태, 점 안 글자, 첫 줄, 둘째 줄). 상태 = none|new|urgent|fail"""
+    if not has_data:
+        return "fail", "!", "현황을 못 읽음", "볼트 폴더·오늘 현황 확인"
+    m = mood(summary)
+    state = "none" if m == "sleep" else m
+    urgent = summary.get("urgent", 0) + summary.get("overdue", 0)
+    if state == "fail":
+        mark, first = "!", "수집 실패"
+    elif state == "urgent":
+        mark, first = str(min(urgent, 99)), f"마감 임박 {urgent}" + (f" · 새 후보 {summary['new_today']}" if summary.get("new_today") else "")
+    elif state == "new":
+        mark, first = str(min(summary["new_today"], 99)), f"새 후보 {summary['new_today']}"
+    else:
+        mark, first = None, "새 소식 없음"
+    second = f"진행 중 {summary.get('in_progress', 0)} · 수집 {summary.get('last_scan', '기록 없음')}"
+    return state, mark, first, second
+
+
 def d_label(deadline, today):
     try:
         d = datetime.strptime(deadline, "%Y-%m-%d").date()
@@ -109,6 +139,35 @@ def vault_file(vault, rel):
 
 def obsidian_uri(path):
     return "obsidian://open?path=" + urllib.parse.quote(str(path), safe="")
+
+
+def default_position(size, screen):
+    """기본 자리: 주 화면 오른쪽 끝에 붙여, 위에서 60% 높이(사용자 요청 2026-11-02: 기본은 화면 끝에 붙어 있게)"""
+    w, h = size
+    sx, sy, sw, sh = screen
+    return sx + sw - w, sy + int(sh * 0.6) - h // 2
+
+
+def clamp_position(pos, size, screens):
+    """떠 있는 아이콘 위치 보정. pos=(x,y) 또는 None, size=(w,h), screens=[(x,y,w,h) 작업 영역, 첫째가 주 화면].
+    아이콘이 어느 화면 안에도 온전히 들어 있지 않으면(모니터를 뺐거나 해상도가 바뀜) 기본 자리로 되돌린다."""
+    w, h = size
+    if pos is not None and None not in pos:
+        x, y = int(pos[0]), int(pos[1])
+        for sx, sy, sw, sh in screens:
+            if sx <= x and sy <= y and x + w <= sx + sw and y + h <= sy + sh:
+                return x, y
+    return default_position(size, screens[0])
+
+
+def dock_to_side(pos, size, screen):
+    """놓은 자리에서 가까운 왼쪽·오른쪽 화면 끝에 붙인다(위아래 위치는 그대로, 화면 안으로만). screen=(x,y,w,h) 작업 영역"""
+    x, y = pos
+    w, h = size
+    sx, sy, sw, sh = screen
+    x = sx if (x + w / 2) < (sx + sw / 2) else sx + sw - w
+    y = min(max(y, sy), sy + sh - h)
+    return x, y
 
 
 def safe_web_link(link):

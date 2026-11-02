@@ -52,6 +52,20 @@ class ModelTest(unittest.TestCase):
         self.assertIn("error", kinds)      # 수집 실패
         self.assertIn("새 소식", model.tooltip(model.summarize({"counts": {}})))
 
+    def test_mood_priority(self):
+        self.assertEqual(model.mood({"notes": [("error", "x")], "urgent": 1, "new_today": 3}), "fail")
+        self.assertEqual(model.mood({"notes": [("warn", "x")], "urgent": 0, "overdue": 1, "new_today": 3}), "urgent")
+        self.assertEqual(model.mood({"notes": [], "urgent": 0, "overdue": 0, "new_today": 2}), "new")
+        self.assertEqual(model.mood({"notes": [], "urgent": 0, "overdue": 0, "new_today": 0}), "sleep")
+
+    def test_tab_view_lines(self):
+        base = {"notes": [], "urgent": 0, "overdue": 0, "new_today": 0, "in_progress": 3, "last_scan": "11/02 08:00 성공"}
+        self.assertEqual(model.tab_view(base), ("none", None, "새 소식 없음", "진행 중 3 · 수집 11/02 08:00 성공"))
+        self.assertEqual(model.tab_view({**base, "new_today": 5})[:3], ("new", "5", "새 후보 5"))
+        self.assertEqual(model.tab_view({**base, "urgent": 1, "overdue": 1, "new_today": 5})[:3], ("urgent", "2", "마감 임박 2 · 새 후보 5"))
+        self.assertEqual(model.tab_view({**base, "notes": [("error", "x")]})[:3], ("fail", "!", "수집 실패"))
+        self.assertEqual(model.tab_view({}, has_data=False)[0], "fail")
+
     def test_d_label(self):
         today = date(2026, 11, 2)
         self.assertEqual(model.d_label("2026-11-05", today), "11/05 (D-3)")
@@ -67,6 +81,24 @@ class ModelTest(unittest.TestCase):
         self.assertIsNone(model.safe_web_link("javascript:alert(1)"))
         self.assertEqual(model.safe_web_link("<https://a.example/1>"), "https://a.example/1")
         self.assertTrue(model.obsidian_uri(Path("C:/v/공고 후보함.md")).startswith("obsidian://open?path=C%3A"))
+
+    def test_floating_position_kept_inside_screens(self):
+        screens = [(0, 0, 1920, 1040), (1920, 0, 1280, 984)]          # 주 화면 + 오른쪽 보조 모니터
+        self.assertEqual(model.clamp_position((100, 200), (56, 56), screens), (100, 200))
+        self.assertEqual(model.clamp_position((2000, 100), (56, 56), screens), (2000, 100), "보조 모니터 위도 그대로")
+        default = (1920 - 56, int(1040 * 0.6) - 28)                      # 기본: 주 화면 오른쪽 끝에 붙음
+        self.assertEqual(model.clamp_position((3300, 100), (56, 56), screens), default, "모니터를 뺐으면 기본 자리로")
+        self.assertEqual(model.clamp_position((1900, 100), (56, 56), screens[:1]), default, "화면 경계에 걸치면 되돌림")
+        self.assertEqual(model.clamp_position(None, (56, 56), screens), default)
+        self.assertEqual(model.clamp_position((None, None), (56, 56), screens), default)
+
+    def test_dock_to_nearest_side(self):
+        scr = (0, 0, 1920, 1040)
+        self.assertEqual(model.dock_to_side((1500, 400), (48, 48), scr), (1872, 400), "오른쪽 절반 → 오른쪽 끝")
+        self.assertEqual(model.dock_to_side((300, 400), (48, 48), scr), (0, 400), "왼쪽 절반 → 왼쪽 끝")
+        self.assertEqual(model.dock_to_side((1500, 1100), (48, 48), scr), (1872, 992), "화면 아래로 끌어도 안으로")
+        self.assertEqual(model.dock_to_side((2900, 400), (48, 48), (1920, 0, 1280, 984)), (3152, 400), "보조 모니터 오른쪽 절반")
+        self.assertEqual(model.dock_to_side((2300, 400), (48, 48), (1920, 0, 1280, 984)), (1920, 400), "보조 모니터 왼쪽 절반")
 
     def test_settings_roundtrip_keeps_defaults(self):
         p = self.vault / "s.json"
