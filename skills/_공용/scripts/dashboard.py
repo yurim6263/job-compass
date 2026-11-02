@@ -311,6 +311,15 @@ def last_scan():
     return hit
 
 
+def filtered_today(today):
+    """오늘 수집 기록(_수집기록.md)으로 걸러 낸 공고 수 — 후보함에 올리지 않은 것"""
+    p = AREA / "_수집기록.md"
+    if not p.exists():
+        return 0
+    return sum(1 for ln in p.read_text(encoding="utf-8").splitlines()
+               if ln.startswith("| " + today.isoformat() + " |"))
+
+
 def notion_pending():
     p = AREA / "_notion-대기.md"
     if not p.exists():
@@ -340,13 +349,13 @@ def to_json(b, now):
         return {"company": c.get("회사", ""), "title": c.get("공고", ""), "id": c.get("공고 ID", ""), "direction": c.get("방향", ""),
                 "score": c.get("점수", ""), "link": c.get("링크", ""), "deadline": m.group(1) if m else None}
     return {"schema": JSON_SCHEMA, "generated_at": now.isoformat(timespec="minutes"), "today": b["today"].isoformat(), "timezone": "KST",
-            "files": {"candidates": CAND.as_posix(), "today": OUT_MD.as_posix()},
+            "files": {"candidates": CAND.as_posix(), "today": OUT_MD.as_posix(), "ledger": (AREA / "_수집기록.md").as_posix()},
             "counts": {"in_progress": len(b.get("inprog", [])), "closed": b.get("closed", 0), "urgent": len(b.get("urgent", [])),
                        "overdue": len(b.get("overdue", [])), "wait_result": len(b.get("wait_result", [])),
                        "new_candidates": b.get("cand_total", 0),
                        "new_candidates_today": sum(1 for c in read_candidates(b["today"])
                                                    if c.get("발견일", "").strip() == b["today"].isoformat()),
-                       "notion_pending": notion_pending()},
+                       "notion_pending": notion_pending(), "filtered_today": filtered_today(b["today"])},
             "notion": (read_setting(AREA / "설정.md", "notion") or "off").strip(),
             "last_scan": last_scan(),
             "urgent": [item(i) for i in b.get("urgent", [])], "overdue": [item(i) for i in b.get("overdue", [])],

@@ -167,7 +167,12 @@ class GlassPanel(QWidget):
         if v.get("alerts"):
             y += 4
         # 새 후보
-        y = self._section(p, y, "새 후보", "점수 높은 순")
+        if v.get("filtered") and v.get("files", {}).get("ledger"):
+            self._text(p, PAD, y, 160, "새 후보", 12, SUB, True)
+            self._link(p, PAD, y, W - PAD * 2, f"오늘 걸러냄 {v['filtered']}건 →", "doc", v["files"]["ledger"], Qt.AlignRight)
+            y += 24
+        else:
+            y = self._section(p, y, "새 후보", "점수 높은 순")
         cands = v.get("cands", [])
         from PySide6.QtGui import QFontMetrics
         fm = QFontMetrics(font(12, True))

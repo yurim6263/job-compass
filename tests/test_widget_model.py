@@ -188,7 +188,9 @@ class DashboardWidgetFieldsTest(VaultCase):
         self.assertEqual(r.code, 0, r.text)
         j = json.loads(self.read("Areas/취업/_widget/오늘 현황.json"))
         self.assertEqual(j["schema"], 1)
-        self.assertEqual(j["files"], {"candidates": "Areas/취업/공고 후보함.md", "today": "Areas/취업/오늘 현황.md"})
+        self.assertEqual(j["files"], {"candidates": "Areas/취업/공고 후보함.md", "today": "Areas/취업/오늘 현황.md",
+                                      "ledger": "Areas/취업/_수집기록.md"})
+        self.assertIn("filtered_today", j["counts"])
         self.assertIn("doc", j["in_progress"][0])
         c = j["new_candidates"][0]
         self.assertEqual((c["company"], c["deadline"], c["score"], c["id"]), ("B사", "2026-11-20", "74 🟡", "jobkorea:2"))

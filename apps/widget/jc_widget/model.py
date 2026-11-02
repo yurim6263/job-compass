@@ -62,7 +62,7 @@ def summarize(data, now=None):
         notes.append(("warn", str(w)))
     return {"badge": urgent + overdue + new_today, "urgent": urgent, "overdue": overdue, "new_today": new_today,
             "new_total": int(c.get("new_candidates", 0) or 0), "wait_result": int(c.get("wait_result", 0) or 0),
-            "in_progress": int(c.get("in_progress", 0) or 0), "notion_pending": int(c.get("notion_pending", 0) or 0),
+            "in_progress": int(c.get("in_progress", 0) or 0), "notion_pending": int(c.get("notion_pending", 0) or 0), "filtered_today": int(c.get("filtered_today", 0) or 0),
             "notion": (data or {}).get("notion", "off"),
             "generated": gen.strftime("%m/%d %H:%M") if gen else "?",
             "last_scan": (f"{scan.get('at', '?')[5:].replace('-', '/')} " + ("성공" if int(scan.get("code", 0) or 0) == 0 else "실패"))
@@ -166,7 +166,8 @@ def panel_view(data, summary, today=None, max_cands=3, max_prog=4, max_actions=2
     files = d.get("files") or {}
     return {"stats": stats, "alerts": alerts[:3], "cands": cands, "more": max(0, s.get("new_total", 0) - len(cands)),
             "prog": prog, "prog_more": max(0, len(d.get("in_progress", [])) - len(prog)), "actions": actions,
-            "foot": foot, "files": {k: files.get(k) for k in ("candidates", "today")},
+            "foot": foot, "files": {k: files.get(k) for k in ("candidates", "today", "ledger")},
+            "filtered": s.get("filtered_today", 0),
             "notes": s.get("notes", []), "generated": s.get("generated", "?")}
 
 

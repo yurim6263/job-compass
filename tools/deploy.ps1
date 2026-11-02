@@ -23,12 +23,17 @@
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Target,
-  [string]$Source = (Join-Path $PSScriptRoot '..\skills'),
+  [string]$Source = '',
   [switch]$Apply,
   [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
+# 기본 원본 폴더는 본문에서 정한다 — Git Bash(`!`)에서 실행하면 param 기본값 안의 $PSScriptRoot 가 비어 실패하던 문제(2026-11-02)
+if (-not $Source) {
+  $here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+  $Source = Join-Path $here '..\skills'
+}
 
 # 복사하지 않는 것
 $ExcludeNames = @('.gitkeep', 'desktop.ini', '.DS_Store', 'Thumbs.db')

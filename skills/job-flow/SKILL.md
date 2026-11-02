@@ -24,6 +24,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 | "마감" | `python -I -X utf8 $S/calendar_export.py build` 로 `마감 캘린더.md`를 새로 만들고 이번 주·다음 주 구획을 보여 준다 |
 | 상태 갱신 말("서류합 됐어" 등) | 아래 "상태 갱신" |
 | "이 후보 지원할래" | 아래 "후보 → 현황표" |
+| "후보함 정리해줘" · "걸러낸 공고 보여줘" · "이거 후보함에 넣어줘" | 아래 "후보함 정리" |
 | "Notion 연결해줘" · "Notion에 올려줘" · "Notion에서 가져와" · "밀린 반영" | 아래 "Notion" |
 | 그 밖 | 아래 "요청 → 스킬" |
 
@@ -47,6 +48,13 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 - 후보함(`Areas/취업/공고 후보함.md`)에서 사용자가 고른 건은 **`/job-posting`을 호출**한다(미리보기 점수는 임시 폴더에만 있으므로 정식 저장은 `/job-posting`이 본문을 다시 받아서 한다).
 - `/job-posting`이 현황표에 `Not started` 행을 추가하면 후보함의 그 줄 상태를 `지원예정`으로 바꾼다: `python -I -X utf8 $S/candidates.py set-state --id <공고 ID> --state 지원예정`(스크립트가 없는 볼트에서는 후보함 상태 칸만 Edit).
 - "건너뛸래"라고 하면 후보함 상태만 `건너뜀`으로(삭제 없음).
+
+## 후보함 정리
+후보함에는 **볼 만한 공고만** 둔다(2026-11-02 사용자 결정). 걸러낸 공고는 지우지 않고 `Areas/취업/_수집기록.md`에 이유와 함께 남는다.
+- "후보함 정리해줘" — `python -I -X utf8 $S/candidates.py tidy`(미리보기: 남김·수집 기록으로·지난으로 접음 목록)를 **그대로** 보여 주고, OK면 `tidy --apply`. 사용자가 `지원예정`·`건너뜀`으로 둔 행은 건드리지 않는다.
+- "걸러낸 공고 보여줘" — `candidates.py filtered [--days 7]`.
+- "이거 후보함에 넣어줘"(잘못 걸러짐) — 공고 ID를 확인하고 `candidates.py restore --id <공고 ID>`.
+- 기준을 바꾸고 싶다고 하면 `Areas/취업/검색 조건.md`의 `제외 직무 낱말`·`점수 기준`(기본 60)·`후보 접는 기간`(기본 14일)·`후보 최대 N건`(권장 10) 칸을 보여 주고, 사용자가 정한 값으로 그 칸만 고친다(행이 없으면 `## 조건` 표에 추가).
 
 ## Notion
 규칙 전체는 `_공용/references/notion.md`(표 6개·올리지 않는 것·미리보기와 확인·삭제 없음). 계산은 `python -I -X utf8 $S/notion_sync.py …`.

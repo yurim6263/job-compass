@@ -1,4 +1,5 @@
 """파일을 만드는·검사하는 스크립트 시험: 캘린더(.ics) · 워드(.docx) · 백업 · 입력 범위 훑기 · 글자 추출 · 자소서·카드 검사 · 오늘 현황."""
+import json
 import re
 import unittest
 import xml.etree.ElementTree as ET
@@ -198,7 +199,7 @@ class VagueExpressionTest(VaultCase):
 
 class CandidatesTest(VaultCase):
     def items(self, query, n, source="잡코리아"):
-        return [{"company": f"{query}사{i}", "title": f"{query} 엔지니어 {i}", "url": f"https://example.com/{query}/{i}", "id": f"{query}:{i}",
+        return [{"company": f"{query}사{i}", "title": f"{query} AI 엔지니어 {i}", "url": f"https://example.com/{query}/{i}", "id": f"{query}:{i}",
                  "deadline": "", "region": "서울", "source": source, "query": query} for i in range(n)]
 
     def set_limit(self, n):
@@ -247,6 +248,67 @@ class CandidatesTest(VaultCase):
         for k in titles:
             self.assertEqual(f"| {k}사 |" in board, k.startswith("신"), k)
         self.assertIn("경력 제외 4", self.read("Areas/취업/_scan-log.md"))
+
+    # ---- 볼 만한 것만 후보함에 (2026-11-02) ----
+    def one(self, key, title, region="서울"):
+        return {"company": f"{key}사", "title": title, "url": f"https://example.com/{key}", "id": f"x:{key}", "deadline": "",
+                "region": region, "source": "잡코리아", "query": "q"}
+
+    def test_screen_keeps_relevant_and_records_the_rest(self):
+        items = [self.one("남1", "설비 데이터 분석 신입"), self.one("남2", "백엔드 개발자(AI 서비스)"),
+                 self.one("빼1", "산업 AI 솔루션 영업"), self.one("빼2", "AI 연구 팀장 채용"),
+                 self.one("빼3", "생산관리 사무 신입"), self.one("빼4", "데이터 엔지니어 신입", "제주"),
+                 self.one("남3", "LLM 서비스 개발", "")]
+        r = self.ingest(items)
+        board = self.read("Areas/취업/공고 후보함.md")
+        ledger = self.read("Areas/취업/_수집기록.md")
+        for it in items:
+            kept = it["company"].startswith("남")
+            self.assertEqual(f"| {it['company']} |" in board, kept, it["company"])
+            self.assertEqual(f"| {it['company']} |" in ledger, not kept, it["company"])
+        self.assertIn("직무 무관 낱말(영업)", ledger)
+        self.assertIn("방향 약함(관련 낱말 없음)", ledger)
+        self.assertIn("지역 밖(제주)", ledger)
+        self.assertIn("걸러 기록 4", self.read("Areas/취업/_scan-log.md"))
+        # 다음 날 같은 공고가 와도 다시 들어오지 않는다(수집 기록으로 중복 판정)
+        r = self.run_script("candidates.py", "ingest", "Areas/취업/_scan-cache/c.json", "--dry")
+        self.assertEqual(json.loads(r.out)["added"], 0)
+
+    def test_low_score_moves_to_ledger_and_restore(self):
+        self.ingest([self.one("가", "설비 AI 신입"), self.one("나", "데이터 분석 신입")])
+        self.assertEqual(self.run_script("candidates.py", "set-score", "--id", "x:가", "--score", "45 🔴").code, 0)
+        self.assertEqual(self.run_script("candidates.py", "set-score", "--id", "x:나", "--score", "72 🟡").code, 0)
+        board = self.read("Areas/취업/공고 후보함.md")
+        self.assertNotIn("| 가사 |", board)
+        self.assertIn("| 나사 |", board)
+        self.assertIn("점수 낮음(45 🔴)", self.read("Areas/취업/_수집기록.md"))
+        self.assertEqual(self.run_script("candidates.py", "restore", "--id", "x:가").code, 0)
+        self.assertIn("| 가사 |", self.read("Areas/취업/공고 후보함.md"))
+        self.assertNotIn("| 가사 |", self.read("Areas/취업/_수집기록.md"))
+
+    def test_tidy_preview_then_apply(self):
+        head = "| 상태 | 회사 | 공고 | 방향 | 지역 | 서류마감(D-n) | 선별 근거 | 점수 | 링크 | 공고 ID | 발견일 |"
+        sep = "|---|---|---|---|---|---|---|---|---|---|---|"
+        rows = ["| 새로 | 가사 | 설비 AI 신입 | 일치 | 서울 | 마감일 미정 |  |  | u | x:1 | 2026-11-01 |",
+                "| 새로 | 나사 | 솔루션 영업 | 약함 | 서울 | 마감일 미정 |  |  | u | x:2 | 2026-11-01 |",
+                "| 점수 | 다사 | 데이터 분석 | 일치 | 서울 | 마감일 미정 |  | 21 🔴 🚫경력 필수 | u | x:3 | 2026-11-01 |",
+                "| 새로 | 라사 | AI 개발 | 일치 | 서울 | 마감일 미정 |  |  | u | x:4 | 2026-10-10 |",
+                "| 지원예정 | 마사 | 생산 영업 | 약함 | 서울 | 마감일 미정 |  |  | u | x:5 | 2026-10-01 |"]
+        self.write("Areas/취업/공고 후보함.md", "\n".join(["# 공고 후보함", "", "## 후보", "", head, sep, *rows, "", "## 후보함_지난", "", head, sep, ""]))
+        before = self.read("Areas/취업/공고 후보함.md")
+        r = self.run_script("candidates.py", "tidy", "--today", "2026-11-02")
+        self.assertEqual(r.code, 0, r.text)
+        self.assertIn("남김 2 · 수집 기록으로 2 · 지난으로 접음 1", r.out)
+        self.assertEqual(self.read("Areas/취업/공고 후보함.md"), before, "미리보기는 바꾸지 않음")
+        self.run_script("candidates.py", "tidy", "--apply", "--today", "2026-11-02")
+        board = self.read("Areas/취업/공고 후보함.md")
+        main, past = board.split("## 후보함_지난")
+        self.assertIn("| 가사 |", main)
+        self.assertIn("| 마사 |", main, "사용자가 지원예정으로 둔 것은 건드리지 않음")
+        self.assertIn("| 오래됨 | 라사 |", past)
+        ledger = self.read("Areas/취업/_수집기록.md")
+        self.assertIn("게이트(경력 필수)", ledger)
+        self.assertIn("직무 무관 낱말(영업)", ledger)
 
     def test_dashboard_counts_each_candidate_once(self):
         self.ingest(self.items("a", 3))

@@ -24,7 +24,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bas
 1. **조건 읽기 + 오늘 날짜(KST) 확정** — `conditions` 출력(검색어 목록·연결 직무·제외 키워드·N·K).
 2. **소스별 검색** (`references/sources.md`에 소스·주소·주의) — 검색어마다 목록을 받아 후보를 **정규화**한다: `{company, title, url, id, deadline, region, source, query}`(`query` = 그 후보를 찾은 검색어. 상한 N에 걸릴 때 스크립트가 검색어·소스별로 번갈아 담는다 — 순서를 직접 섞지 않는다). 목록에 마감일이 없으면 `""`(후보함에 "마감 여부 미확인"으로 남는다). 공고 ID 규칙은 `/job-posting` 0단계와 같다. 한 소스가 막히거나 0건이어도 나머지는 계속한다.
 3. **후보 JSON 만들기** — `T/<오늘>-후보.json`에 Write(후보 목록 배열).
-4. **1차 선별 + 중복 제거 + 기록** — `python -I -X utf8 $S/candidates.py ingest Areas/취업/_scan-cache/<오늘>-후보.json` (`--dry`면 기록 없이 결과만). 스크립트가 마감 지남 · 제목의 필수 경력("n년 이상") · 제목의 석사 이상 필수 · 제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함)를 거르고 방향(`일치/약함`)을 표시하고 N건까지 후보함에 쓴다. **이것은 점수가 아니다.**
+4. **1차 선별 + 중복 제거 + 기록** — `python -I -X utf8 $S/candidates.py ingest Areas/취업/_scan-cache/<오늘>-후보.json` (`--dry`면 기록 없이 결과만). 스크립트가 마감 지남 · 제목의 필수 경력("n년 이상"·"경력채용" 등) · 제목의 석사 이상 필수 · 제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함·수집 기록)를 거르고, **볼 만한 것만** 후보함에 N건까지 쓴다 — 제목에 직무 무관 낱말(영업·팀장·책임급·시니어·리드·인재풀·생산직 등)이 있거나, 방향이 `약함`인데 관련 낱말(AI·데이터·ML·LLM·예지보전·설비 등)도 없거나, 지역 조건 밖이면 후보함 대신 `Areas/취업/_수집기록.md`(수집 기록)에 이유와 함께 남긴다(지우지 않음, 다음 수집의 중복 판정에도 쓰임). **이것은 점수가 아니다.**
    - 같은 회사·같은 마감인데 ID가 다르면 `same_posting_maybe`로 알려 준다 — 합치지 않고 표시만(사용자가 결정).
 5. **상위 K건 미리보기 점수** — 아래 명령은 **한 줄씩 그대로** 쓴다(셸 변수·`cd`·`&&`·`|`·`>` 없이. 무인 실행에서는 그런 명령이 막혀 단계가 끊긴다).
    1. 대상: `python -I -X utf8 $S/candidates.py top` → 점수 없는 후보 K건(방향 `일치`를 먼저, 모자라면 `약함`으로 채움. 각각 마감 임박순, 마감 미정은 최근 발견순). 보고에 `약함`으로 채운 건수를 적는다. 비면 이 단계를 건너뛴다.
@@ -32,9 +32,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bas
    3. 건마다 본문 받기: `python -I -X utf8 $S/fetch_posting.py <공고 ID>` (잡코리아·사람인은 주소를 스크립트가 만든다. 그 밖은 `--url <후보함 링크>`). 마지막 줄 JSON의 `files[].txt`를 **Read**로 연다(맨 위 `요약 칸:` 줄은 사이트의 경력·학력·마감일 요약). 종료 코드 3이거나 `body_likely`가 false면 점수를 내지 않고 `python -I -X utf8 $S/candidates.py set-score --id <공고 ID> --score "미산출 — 본문 미확보" --state 새로`.
    4. 판정: txt에서 자격(Q)·우대(P)·사용 기술·근무지·경력·학력·마감을 읽어 `/job-posting`의 `references/compare-and-score.md` 규칙대로 카드와 대조한다(카드에 없는 경험은 갭). 경력 연차 요구(예: "경력 3년 이상", "경력 3~5년")는 `gates.경력 = 필수`, 마감은 `deadline_hint`와 txt로 확인(`상시`면 `남음`).
    5. 계산: 판정을 `Areas/취업/_scan-cache/<이름>/점수입력.json`에 **Write**(`<이름>` = 공고 ID의 `:`를 `-`로, 3번이 만든 폴더) → `python -I -X utf8 $S/score_calc.py Areas/취업/_scan-cache/<이름>/점수입력.json` → 출력 끝 "현황표 적합도:" 줄의 값(예: `74 🟡`)을 그대로 `python -I -X utf8 $S/candidates.py set-score --id <공고 ID> --score "<적합도>" --deadline <YYYY-MM-DD>`(`--deadline`은 본문에서 마감일을 확인했을 때만 — 후보함·캘린더의 "마감일 미정"이 채워진다. `상시`면 붙이지 않는다). 판정 근거 몇 줄은 같은 폴더 `점수.md`에 Write.
-   6. 결과는 `_scan-cache/`와 후보함 `점수` 칸에만. raw·wiki·현황표는 만들지 않는다(정식 저장은 사용자가 고른 뒤 `/job-posting`).
-6. **정리·갱신** — `python -I -X utf8 $S/candidates.py expire`(마감 지난 후보 `마감`으로, 일주일 지나면 `후보함_지난`) → `python -I -X utf8 $S/calendar_export.py build` → `python -I -X utf8 $S/dashboard.py today --write`.
-7. **요약 보고** — 새 후보 수 / 분석한 것과 점수 상위 / 마감 임박(3일) 후보 / 제외 건수(경력·학력·마감·중복) / **실패한 소스와 이유** / 허용이 필요했던 단계 / 쓴 파일 목록. 같은 소스가 `_scan-log.md`에 3번 연속 실패로 적혀 있으면 요약 맨 위에 경고.
+   6. 결과는 `_scan-cache/`와 후보함 `점수` 칸에만. 점수가 기준(`검색 조건.md`의 `점수 기준`, 기본 60) 미만이거나 게이트 🚫이면 `set-score`가 그 후보를 수집 기록으로 옮긴다(정상 — 보고에 "점수 낮아 기록으로 n건"). raw·wiki·현황표는 만들지 않는다(정식 저장은 사용자가 고른 뒤 `/job-posting`).
+6. **정리·갱신** — `python -I -X utf8 $S/candidates.py expire`(14일 동안 손대지 않은 후보는 `오래됨`으로 `후보함_지난`에 접고, 마감 지난 후보 `마감`으로, 일주일 지나면 `후보함_지난`) → `python -I -X utf8 $S/calendar_export.py build` → `python -I -X utf8 $S/dashboard.py today --write`.
+7. **요약 보고** — 새 후보 수 / 걸러서 수집 기록으로 보낸 수(이유별) / 분석한 것과 점수 상위 / 마감 임박(3일) 후보 / 제외 건수(경력·학력·마감·중복) / **실패한 소스와 이유** / 허용이 필요했던 단계 / 쓴 파일 목록. 같은 소스가 `_scan-log.md`에 3번 연속 실패로 적혀 있으면 요약 맨 위에 경고.
 
 ## 실패·예외
 | 상황 | 처리 |
