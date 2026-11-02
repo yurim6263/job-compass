@@ -319,12 +319,28 @@ def notion_pending():
     return max(0, len(rows) - 2)      # 머리줄·구분줄 제외
 
 
+JSON_SCHEMA = 1     # 위젯(apps/widget)이 읽는 판. 칸을 지우거나 뜻을 바꾸면 올린다(더하기만 하면 그대로)
+
+
+def doc_of(row):
+    """그 행의 공고 wiki 문서 경로(볼트 루트 기준, `/` 구분). 파일이 없으면 None"""
+    t = link_target(row["공고"])
+    p = WIKI / (t + ".md") if t else None
+    return p.as_posix() if p and p.exists() else None
+
+
 def to_json(b, now):
     def item(i):
         r = i["row"]
         return {"company": r["기업명"], "job": r["직무"], "id": r["공고 ID"], "state": r["진행상태"], "fit": r["적합도"],
-                "deadline": i["deadline"].isoformat() if i["deadline"] else None, "steps": i["steps"]}
-    return {"generated_at": now.isoformat(timespec="minutes"), "today": b["today"].isoformat(), "timezone": "KST",
+                "deadline": i["deadline"].isoformat() if i["deadline"] else None, "steps": i["steps"], "doc": doc_of(r)}
+
+    def cand(c):
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", c.get("서류마감(D-n)", "").strip())
+        return {"company": c.get("회사", ""), "title": c.get("공고", ""), "id": c.get("공고 ID", ""), "direction": c.get("방향", ""),
+                "score": c.get("점수", ""), "link": c.get("링크", ""), "deadline": m.group(1) if m else None}
+    return {"schema": JSON_SCHEMA, "generated_at": now.isoformat(timespec="minutes"), "today": b["today"].isoformat(), "timezone": "KST",
+            "files": {"candidates": CAND.as_posix(), "today": OUT_MD.as_posix()},
             "counts": {"in_progress": len(b.get("inprog", [])), "closed": b.get("closed", 0), "urgent": len(b.get("urgent", [])),
                        "overdue": len(b.get("overdue", [])), "wait_result": len(b.get("wait_result", [])),
                        "new_candidates": b.get("cand_total", 0),
@@ -336,8 +352,7 @@ def to_json(b, now):
             "urgent": [item(i) for i in b.get("urgent", [])], "overdue": [item(i) for i in b.get("overdue", [])],
             "wait_result": [item(i) for i in b.get("wait_result", [])],
             "stale": [{**item(i), "days": d} for i, d in b.get("stale", [])],
-            "new_candidates": [{"company": c.get("회사", ""), "direction": c.get("방향", ""), "score": c.get("점수", ""), "link": c.get("링크", "")}
-                               for c in b.get("cands", [])[:3]],
+            "new_candidates": [cand(c) for c in b.get("cands", [])[:3]],
             "in_progress": [item(i) for i in b.get("inprog", [])], "next_actions": b.get("actions", []),
             "warnings": b.get("warnings", []) + b.get("scan_warn", [])}
 

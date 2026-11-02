@@ -44,6 +44,7 @@ SOFTWARE.
 | pypdf 6.19.0 | PDF 글자 추출 | BSD-3-Clause (설치본 `licenses/LICENSE` 원문 확인, 2026-10-31) |
 | pyhwp 0.1b15 (`hwp5txt` 명령) | 한글(.hwp) 글자 추출 | **GNU AGPL v3 이상** — 이 저장소에 **포함하지 않고**, 사용자가 따로 설치해 명령으로만 호출하는 선택 도구로 다룹니다(포함·수정 배포 여부에 따라 조건이 달라지므로 공개 전 점검에서 다시 확인) |
 | six 1.17.0, olefile 0.47, lxml 6.1.3 (pyhwp의 의존 패키지) | 위와 같음 | MIT / BSD / BSD-3-Clause |
+| PySide6 6.12.0 (Qt for Python) | 알림 아이콘 앱(`apps/widget/`)의 화면 | LGPL-3.0 또는 GPL-2.0/3.0 중 선택(`pip show` 확인, 2026-11-02). 이 저장소에 **포함하지 않고** 사용자가 `pip install --user PySide6`로 설치해 불러 쓴다(수정하지 않음). 공개 전 점검에서 LGPL 고지 방식을 다시 확인 |
 | Python 3.12 | 실행 환경 | PSF License |
 
 ## 사용 환경
