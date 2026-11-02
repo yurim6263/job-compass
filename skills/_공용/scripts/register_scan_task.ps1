@@ -35,7 +35,8 @@ if ($Unregister) {
   exit 0
 }
 
-$arg = "-NoProfile -ExecutionPolicy Bypass -File `"$runner`" -Vault `"$Vault`""
+# -WindowStyle Hidden: 검은 창이 떠 있다가 사용자가 닫으면 실행이 중간에 끊긴다(2026-11-02 결과 0xC000013A). 창을 숨겨 그 경우를 막는다
+$arg = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runner`" -Vault `"$Vault`""
 if ($ConfigDir) {
   if (-not (Test-Path -LiteralPath $ConfigDir -PathType Container)) { throw "설정 폴더가 없습니다: $ConfigDir" }
   $ConfigDir = (Resolve-Path -LiteralPath $ConfigDir).Path
