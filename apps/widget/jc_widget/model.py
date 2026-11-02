@@ -170,6 +170,36 @@ def panel_view(data, summary, today=None, max_cands=3, max_prog=4, max_actions=2
             "notes": s.get("notes", []), "generated": s.get("generated", "?")}
 
 
+def notify_decision(prev, data, summary):
+    """말풍선을 띄울지(docs/widget-plan.md §4). 반환: (메시지 또는 None, 새로 저장할 상태).
+    - 같은 generated_at 으로는 한 번만. 처음 실행(이전 기록 없음)은 기준만 저장하고 띄우지 않는다.
+    - 이전보다 늘어난 것만: 오늘 새 후보(날짜가 바뀌면 0부터) · 마감 임박 · 마감 지난 지원 전. 수집이 새로 실패하면 그것도.
+    - 회사 이름은 넣지 않는다(화면 공유 중일 수 있음)."""
+    d = data or {}
+    gen = d.get("generated_at")
+    cur = {"generated_at": gen, "today": d.get("today"), "new_today": summary.get("new_today", 0),
+           "urgent": summary.get("urgent", 0), "overdue": summary.get("overdue", 0),
+           "failed": any(level == "error" for level, _ in summary.get("notes", []))}
+    prev = prev or {}
+    if not gen or gen == prev.get("generated_at"):
+        return None, prev
+    if not prev.get("generated_at"):
+        return None, cur
+    base_new = prev.get("new_today", 0) if prev.get("today") == cur["today"] else 0
+    parts = []
+    if cur["urgent"] > prev.get("urgent", 0):
+        parts.append(f"마감 임박 {cur['urgent']}건")
+    if cur["overdue"] > prev.get("overdue", 0):
+        parts.append(f"마감 지난 지원 전 {cur['overdue']}건")
+    if cur["new_today"] > base_new:
+        scores = [s for s in (_score(c.get("score"))[0] for c in d.get("new_candidates", [])) if s is not None]
+        parts.append(f"새 후보 {cur['new_today'] - base_new}건" + (f"(최고 {max(scores)}점)" if scores else ""))
+    if cur["failed"] and not prev.get("failed"):
+        parts.append("자동 수집 실패")
+    msg = " · ".join(parts) + " — 채용 현황을 확인하세요" if parts else None
+    return msg, cur
+
+
 def d_label(deadline, today):
     try:
         d = datetime.strptime(deadline, "%Y-%m-%d").date()

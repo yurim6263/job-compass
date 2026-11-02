@@ -92,6 +92,29 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(v["actions"], ["나사 — /cover-letter 첨삭"])
         self.assertEqual(v["foot"], "수집 11/02 08:00 성공 · 노션 켜짐 · 밀린 반영 1")
 
+    def test_notify_only_increases_once(self):
+        def s(new=0, urgent=0, overdue=0, fail=False):
+            return {"new_today": new, "urgent": urgent, "overdue": overdue, "notes": [("error", "x")] if fail else []}
+        d1 = {"generated_at": "2026-11-02T08:01", "today": "2026-11-02",
+              "new_candidates": [{"company": "A사", "score": "74 🟡"}, {"company": "B사", "score": ""}]}
+        msg, st = model.notify_decision({}, d1, s(new=5))
+        self.assertIsNone(msg, "처음 실행은 기준만 저장")
+        self.assertEqual(st["new_today"], 5)
+        self.assertEqual(model.notify_decision(st, d1, s(new=5)), (None, st), "같은 현황으로는 한 번만")
+        d2 = {**d1, "generated_at": "2026-11-02T12:00"}
+        msg, st2 = model.notify_decision(st, d2, s(new=8, urgent=1))
+        self.assertEqual(msg, "마감 임박 1건 · 새 후보 3건(최고 74점) — 채용 현황을 확인하세요")
+        self.assertNotIn("A사", msg)
+        msg, st3 = model.notify_decision(st2, {**d2, "generated_at": "2026-11-02T13:00"}, s(new=8, urgent=0))
+        self.assertIsNone(msg, "줄어든 것은 알리지 않음")
+        d4 = {**d1, "generated_at": "2026-11-03T08:00", "today": "2026-11-03"}
+        msg, _ = model.notify_decision(st3, d4, s(new=2))
+        self.assertTrue(msg.startswith("새 후보 2건"), "날짜가 바뀌면 오늘 새 후보는 0부터 비교")
+        msg, st5 = model.notify_decision(st3, d4, s(fail=True))
+        self.assertIn("자동 수집 실패", msg)
+        msg, _ = model.notify_decision(st5, {**d4, "generated_at": "2026-11-03T09:00"}, s(fail=True))
+        self.assertIsNone(msg, "실패가 이어지면 다시 알리지 않음")
+
     def test_d_label(self):
         today = date(2026, 11, 2)
         self.assertEqual(model.d_label("2026-11-05", today), "11/05 (D-3)")

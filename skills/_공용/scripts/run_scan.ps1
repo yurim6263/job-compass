@@ -70,8 +70,12 @@ $line = "- $($start.ToString('yyyy-MM-dd HH:mm')) · 무인 실행 종료(소요
 if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $log -Value $line -Encoding UTF8 }
 
 # 알림: 마감 임박·새 후보 (오늘 현황.json 기준)
+# 알림 위젯(apps/widget)이 켜져 있으면(3분 안에 heartbeat 갱신) 위젯이 알림을 맡으므로 여기서는 띄우지 않는다(중복 방지)
 $json = Join-Path $Vault 'Areas\취업\_widget\오늘 현황.json'
-if (Test-Path -LiteralPath $json) {
+$hb = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:APPDATA }) 'job-compass-widget\heartbeat'
+$widgetOn = (Test-Path -LiteralPath $hb) -and (((Get-Date) - (Get-Item -LiteralPath $hb).LastWriteTime).TotalMinutes -lt 3)
+if ($widgetOn) { Write-Output '(알림 위젯이 켜져 있어 여기서는 알림을 띄우지 않음)' }
+if ((-not $widgetOn) -and (Test-Path -LiteralPath $json)) {
   $d = Get-Content -LiteralPath $json -Raw -Encoding UTF8 | ConvertFrom-Json
   $urgent = [int]$d.counts.urgent; $cands = [int]$d.counts.new_candidates; $over = [int]$d.counts.overdue
   if ($urgent -gt 0 -or $cands -gt 0 -or $over -gt 0) {

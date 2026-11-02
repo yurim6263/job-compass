@@ -219,6 +219,7 @@ class WidgetApp:
         self.menu = menu
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self.on_tray)
+        self.tray.messageClicked.connect(self.show_window)       # 말풍선을 누르면 현황 창
         self.tray.show()
         self.watcher = QFileSystemWatcher()
         self.watcher.fileChanged.connect(lambda _p: QTimer.singleShot(800, self.reload))   # 쓰는 중 읽지 않게 잠깐 기다림
@@ -308,6 +309,19 @@ class WidgetApp:
         self.floating.set_state(state, mark, (first, second), s["badge"], tip + "\n(끌어서 옮기기 · 우클릭: 메뉴)")
         self.win.set_view(model.panel_view(self.data, s), self.problem)
         self.watch()
+        settings.touch_heartbeat()                                 # 위젯이 켜져 있음 → 자동 수집은 자기 알림을 건너뜀
+        if self.data:
+            self.notify(s)
+
+    def notify(self, s):
+        """늘어난 것만, 같은 현황으로는 한 번만 말풍선(W3, docs/widget-plan.md §4)"""
+        prev = self.cfg.get("notified") or {}
+        msg, state = model.notify_decision(prev, self.data, s)
+        if state != prev:
+            self.cfg["notified"] = state
+            settings.save(self.cfg)
+        if msg:
+            self.tray.showMessage("채용 현황", msg, QSystemTrayIcon.Information, 8000)
 
 
 def main():
