@@ -51,9 +51,10 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(python -I -X utf8 .claude/ski
 
 ## 후보함 정리
 후보함에는 **볼 만한 공고만** 둔다(2026-11-02 사용자 결정). 걸러낸 공고는 지우지 않고 `Areas/취업/_수집기록.md`에 이유와 함께 남는다.
-- "후보함 정리해줘" — `python -I -X utf8 $S/candidates.py tidy`(미리보기: 남김·수집 기록으로·지난으로 접음 목록)를 **그대로** 보여 주고, OK면 `tidy --apply`. 사용자가 `지원예정`·`건너뜀`으로 둔 행은 건드리지 않는다.
+- "후보함 정리해줘" — `python -I -X utf8 $S/candidates.py tidy --check-career`(경력 정보가 없는 후보는 사이트 요약 칸의 경력을 한 건씩 확인 · 미리보기: 남김·수집 기록으로·지난으로 접음 목록)를 **그대로** 보여 주고, OK면 `tidy --apply --check-career`. 사용자가 `지원예정`·`건너뜀`으로 둔 행은 건드리지 않는다.
 - "걸러낸 공고 보여줘" — `candidates.py filtered [--days 7]`.
 - "이거 후보함에 넣어줘"(잘못 걸러짐) — 공고 ID를 확인하고 `candidates.py restore --id <공고 ID>`.
+- "현황표의 ○○를 후보함으로 되돌려줘"(아직 지원하기로 정하지 않은 공고) — `candidates.py from-table --id <공고 ID>`(또는 `--company`·`--job`) 미리보기를 보여 주고 OK면 `--apply`. `Not started` 행만 되돌린다(진행한 행은 거부). 현황표 사본이 `_백업/`에 남고, raw·wiki·output 공고 문서는 그대로 둔다. Notion에 이미 올린 행이 있으면 Notion 쪽은 지우지 않는다고 알린다(삭제는 사용자가).
 - 기준을 바꾸고 싶다고 하면 `Areas/취업/검색 조건.md`의 `제외 직무 낱말`·`점수 기준`(기본 60)·`후보 접는 기간`(기본 14일)·`후보 최대 N건`(권장 10) 칸을 보여 주고, 사용자가 정한 값으로 그 칸만 고친다(행이 없으면 `## 조건` 표에 추가).
 
 ## Notion

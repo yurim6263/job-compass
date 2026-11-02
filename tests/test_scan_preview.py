@@ -52,6 +52,7 @@ class FetchPostingTest(VaultCase):
         res = json.loads(r.out.strip().splitlines()[-1])
         self.assertTrue(res["body_likely"])
         self.assertEqual(res["deadline_hint"], "2026-11-20")
+        self.assertEqual(res["career"], "신입", "사이트 요약 칸의 경력 값")
         txt = self.read(res["files"][0]["txt"])
         self.assertTrue(txt.startswith("요약 칸: 경력 : 신입, 학력 : 대졸"))
         self.assertIn("- Python 가능자", txt)

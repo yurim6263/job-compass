@@ -274,6 +274,47 @@ class CandidatesTest(VaultCase):
         r = self.run_script("candidates.py", "ingest", "Areas/취업/_scan-cache/c.json", "--dry")
         self.assertEqual(json.loads(r.out)["added"], 0)
 
+    def test_career_range_and_list_career_field(self):
+        items = [self.one("범위1", "AI 서비스 개발자 (경력 3~5년)"), self.one("범위2", "데이터 엔지니어 주니어(1~3년)"),
+                 {**self.one("칸1", "설비 AI 엔지니어"), "career": "경력3년↑"}, {**self.one("칸2", "설비 AI 엔지니어"), "career": "경력"},
+                 {**self.one("남1", "설비 AI 엔지니어"), "career": "신입·경력"}, {**self.one("남2", "데이터 분석"), "career": "신입"}]
+        self.ingest(items)
+        board = self.read("Areas/취업/공고 후보함.md")
+        for it in items:
+            self.assertEqual(f"| {it['company']} |" in board, it["company"].startswith("남"), it["company"])
+        ledger = self.read("Areas/취업/_수집기록.md")
+        self.assertIn("경력 필수(목록: 경력3년↑)", ledger)
+        self.assertIn("경력 칸 신입·경력", board, "목록의 경력 칸은 선별 근거에 남긴다")
+
+    def test_set_score_with_site_career_moves_to_ledger(self):
+        self.ingest([self.one("요1", "AI 기반 스마트팩토리 솔루션 개발자 모집"), self.one("요2", "설비 AI 개발")])
+        self.run_script("candidates.py", "set-score", "--id", "x:요1", "--score", "75 🟡", "--career", "경력 3년이상")
+        self.run_script("candidates.py", "set-score", "--id", "x:요2", "--score", "75 🟡", "--career", "신입·경력")
+        board = self.read("Areas/취업/공고 후보함.md")
+        self.assertNotIn("| 요1사 |", board, "본문과 달라도 사이트 요약 칸이 경력만이면 뺀다")
+        self.assertIn("| 요2사 |", board)
+        self.assertIn("경력 필수(공고 요약 칸: 경력 3년이상)", self.read("Areas/취업/_수집기록.md"))
+
+    def test_from_table_moves_not_started_row_back(self):
+        self.add_row("가상A사", id_="jobkorea:11", fit="74 🟡")
+        self.add_row("가상B사", id_="jobkorea:12")
+        self.run_script("status_table.py", "set-status", "--id", "jobkorea:12", "--state", "자소서 작성중")
+        before = self.read("Areas/취업/지원 현황.md")
+        r = self.run_script("candidates.py", "from-table", "--id", "jobkorea:11")
+        self.assertEqual(r.code, 0, r.text)
+        self.assertEqual(self.read("Areas/취업/지원 현황.md"), before, "미리보기는 바꾸지 않음")
+        r = self.run_script("candidates.py", "from-table", "--id", "jobkorea:11", "--apply")
+        self.assertEqual(r.code, 0, r.text)
+        self.assertIsNone(self.row("가상A사"), "현황표에서 빠짐")
+        board = self.read("Areas/취업/공고 후보함.md")
+        self.assertIn("| 점수 | 가상A사 |", board)
+        self.assertIn("74 🟡", board)
+        self.assertIn("https://www.jobkorea.co.kr/Recruit/GI_Read/11", board)
+        self.assertTrue(any(self.path("Areas/취업/_백업").rglob("*지원 현황*")), "현황표 사본")
+        r = self.run_script("candidates.py", "from-table", "--id", "jobkorea:12", "--apply")
+        self.assertEqual(r.code, 4, "진행한 행은 되돌리지 않음")
+        self.assertIsNotNone(self.row("가상B사"))
+
     def test_low_score_moves_to_ledger_and_restore(self):
         self.ingest([self.one("가", "설비 AI 신입"), self.one("나", "데이터 분석 신입")])
         self.assertEqual(self.run_script("candidates.py", "set-score", "--id", "x:가", "--score", "45 🔴").code, 0)
@@ -293,12 +334,14 @@ class CandidatesTest(VaultCase):
                 "| 새로 | 나사 | 솔루션 영업 | 약함 | 서울 | 마감일 미정 |  |  | u | x:2 | 2026-11-01 |",
                 "| 점수 | 다사 | 데이터 분석 | 일치 | 서울 | 마감일 미정 |  | 21 🔴 🚫경력 필수 | u | x:3 | 2026-11-01 |",
                 "| 새로 | 라사 | AI 개발 | 일치 | 서울 | 마감일 미정 |  |  | u | x:4 | 2026-10-10 |",
-                "| 지원예정 | 마사 | 생산 영업 | 약함 | 서울 | 마감일 미정 |  |  | u | x:5 | 2026-10-01 |"]
+                "| 지원예정 | 마사 | 생산 영업 | 약함 | 서울 | 마감일 미정 |  |  | u | x:5 | 2026-10-01 |",
+                "| 새로 | 바사 | AI 개발자 (경력 3~5년) | 일치 | 서울 | 마감일 미정 |  |  | u | x:6 | 2026-11-01 |",
+                "| 새로 | 사사 | 설비 AI 엔지니어 | 일치 | 서울 | 마감일 미정 | 경력 칸 경력5년↑ |  | u | x:7 | 2026-11-01 |"]
         self.write("Areas/취업/공고 후보함.md", "\n".join(["# 공고 후보함", "", "## 후보", "", head, sep, *rows, "", "## 후보함_지난", "", head, sep, ""]))
         before = self.read("Areas/취업/공고 후보함.md")
         r = self.run_script("candidates.py", "tidy", "--today", "2026-11-02")
         self.assertEqual(r.code, 0, r.text)
-        self.assertIn("남김 2 · 수집 기록으로 2 · 지난으로 접음 1", r.out)
+        self.assertIn("남김 2 · 수집 기록으로 4 · 지난으로 접음 1", r.out)
         self.assertEqual(self.read("Areas/취업/공고 후보함.md"), before, "미리보기는 바꾸지 않음")
         self.run_script("candidates.py", "tidy", "--apply", "--today", "2026-11-02")
         board = self.read("Areas/취업/공고 후보함.md")

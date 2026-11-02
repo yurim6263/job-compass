@@ -6,21 +6,26 @@
   python -I -X utf8 candidates.py ingest <후보.json> [--dry] [--today YYYY-MM-DD]   # 1차 선별 + 중복 제거 + 후보함 기록
   python -I -X utf8 candidates.py expire [--today YYYY-MM-DD]                      # 마감 지난 후보 정리
   python -I -X utf8 candidates.py set-state --id <공고 ID> --state 지원예정|건너뜀|본문확보|점수|새로|마감
-  python -I -X utf8 candidates.py set-score --id <공고 ID> --score "78 🟡" [--state 점수] [--deadline YYYY-MM-DD]
+  python -I -X utf8 candidates.py set-score --id <공고 ID> --score "78 🟡" [--state 점수] [--deadline YYYY-MM-DD] [--career "경력 3년이상"]
   python -I -X utf8 candidates.py list [--json] [--state 새로]
   python -I -X utf8 candidates.py top [--k K]                 # 미리보기 점수를 낼 후보 K건(점수 없음 · 일치 먼저, 모자라면 약함 · 마감 임박순)
-  python -I -X utf8 candidates.py tidy [--apply] [--today …]  # 지금 후보함에 아래 '볼 만한 것만' 기준을 적용(기본 미리보기)
+  python -I -X utf8 candidates.py tidy [--apply] [--check-career] [--today …]  # 지금 후보함에 아래 '볼 만한 것만' 기준을 적용(기본 미리보기)
+        --check-career: 경력 칸 정보가 없는 후보는 공고의 사이트 요약 칸(경력)을 한 건씩 받아 확인(잡코리아·사람인, 1초 간격)
   python -I -X utf8 candidates.py filtered [--days 7]         # 수집 기록(걸러낸 공고) 보기
   python -I -X utf8 candidates.py restore --id <공고 ID>      # 걸러낸 공고를 후보함으로 되살림
+  python -I -X utf8 candidates.py from-table (--id <공고 ID> | --company <회사> [--job <직무>]) [--apply]
+        # 지원 현황(현황표)의 'Not started' 행을 후보함으로 되돌림(아직 지원하기로 정하지 않은 공고). 기본 미리보기.
+        # 현황표는 고치기 전 사본(_백업/)을 남기고 그 행만 뺀다. raw·wiki·output 문서는 지우지 않는다.
 
-후보 JSON(모델이 검색 결과를 정규화한 것): [{"company","title","url","id","deadline"(YYYY-MM-DD 또는 ""),"region","source","query"}]
+후보 JSON(모델이 검색 결과를 정규화한 것): [{"company","title","url","id","deadline"(YYYY-MM-DD 또는 ""),"region","career","source","query"}]
+  `career`: 목록에 따로 적힌 경력 칸 그대로(예: "신입", "경력3년↑", "신입·경력", "경력무관"). 없으면 "". 제목에 경력 말이 없어도 이 칸으로 거른다.
   `query`(그 후보를 찾은 검색어)를 적으면 상한(N)에 걸릴 때 소스·검색어별로 번갈아 담는다(첫 검색어가 상한을 다 쓰지 않게).
 1차 선별은 점수가 아니다(기획 02 §6-④): 마감 지남 · 제목의 필수 경력("n년 이상"·"경력채용"·"경력직"·"[경력]", 제목에 신입이 함께 있으면 남김) · 제목의 석사 이상 필수 ·
   제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함)를 거른다. 방향은 제목이 연결 직무 키워드와 맞는지로 `일치/약함`만 표시한다.
 후보함에는 '볼 만한 것만'(2026-11-02 사용자 결정): 걸러낸 공고는 지우지 않고 `_수집기록.md`(수집 기록)에 이유와 함께 옮긴다 — 같은 공고가 다시 들어오지 않게 중복 판정에도 쓴다.
   ① 제목에 직무 무관 낱말(영업·팀장·책임급·시니어·리드·인재풀·생산직 등, `검색 조건.md`의 `제외 직무 낱말`로 바꿈) ② 방향 `약함`인데 관련 낱말(AI·데이터·ML·LLM·예지보전·설비 등)도 없음
   ③ 지역 조건 밖(지역이 안 적힌 공고는 남김) ④ 점수를 냈는데 기준(기본 60, `점수 기준`) 미만이거나 게이트 🚫 ⑤ 14일(`후보 접는 기간`) 동안 손대지 않은 후보는 `후보함_지난`으로 접음(상태 `오래됨`)
-쓰는 곳: 후보함, `_수집기록.md`, `_scan-log.md` 세 파일뿐. raw·wiki·현황표·Notes 는 건드리지 않는다.
+쓰는 곳: 후보함, `_수집기록.md`, `_scan-log.md` 세 파일뿐(예외: `from-table`은 사용자 확인 뒤 현황표에서 그 행만 뺀다 — 사본을 남김). raw·wiki·현황표·Notes 는 건드리지 않는다.
 """
 import argparse
 import json
@@ -61,7 +66,8 @@ HEAD = """# 공고 후보함
 TBL = "| " + " | ".join(COLS) + " |\n|" + "---|" * len(COLS) + "\n"
 
 EXP_REQ = re.compile(r"(\d+)\s*년\s*(이상|↑|차\s*이상|~)|경력\s*(필수|\d+\s*년)|\b(\d+)\+\s*years"
-                     r"|경력\s*(채용|직|사원|자\s*(채용|모집))|[\[\(【<]\s*경력\s*[\]\)】>]", re.I)   # 제목의 "경력채용·경력직·[경력]"
+                     r"|경력\s*(채용|직|사원|자\s*(채용|모집))|[\[\(【<]\s*경력\s*[\]\)】>]"   # 제목의 "경력채용·경력직·[경력]"
+                     r"|\d+\s*[~\-∼〜]\s*\d+\s*년|경력\s*\d+", re.I)          # "3~5년"·"1-3년차"·"경력 3~5년"(범위, 2026-11-02 보강)
 EXP_OK = re.compile(r"(신입|경력\s*무관|무관|인턴|신입\s*가능|경력자?\s*우대|\d+\s*년\s*(이하|미만))")
 MASTER_REQ = re.compile(r"(석사|박사|석[·ㆍ]박사)\s*(이상\s*)?(필수|만\s*지원)|(석사|박사)\s*이상\s*(?!우대)(?!또는)")
 MASTER_OK = re.compile(r"(우대|또는|가능)")
@@ -162,6 +168,16 @@ def read_conditions():
             elif k == "유형":
                 out["types"] = v
     return out
+
+
+def career_required(title, career=""):
+    """제목과 목록의 경력 칸(career: '신입'·'경력3년↑'·'신입·경력'·'경력무관' 등)으로 경력 필수인지. 신입·무관·인턴이 같이 있으면 남김"""
+    text = f"{title or ''} | {career or ''}"
+    if EXP_OK.search(text):
+        return False
+    if EXP_REQ.search(text):
+        return True
+    return "경력" in (career or "")          # 목록 칸이 그냥 '경력'이면 경력 필수로 본다
 
 
 def load_ledger():
@@ -326,8 +342,8 @@ def cmd_ingest(a):
         if dl and dl < today:
             stats["마감 지남"] += 1          # 마감 지난 공고는 기록하지 않는다(다시 와도 또 걸러짐)
             continue
-        if EXP_REQ.search(title) and not EXP_OK.search(title):
-            drop(it, "경력 필수(제목)", "경력 제외")
+        if career_required(title, it.get("career", "")):
+            drop(it, "경력 필수(" + ("목록: " + it["career"] if it.get("career") else "제목") + ")", "경력 제외")
             continue
         if MASTER_REQ.search(title) and not MASTER_OK.search(title):
             drop(it, "석사 이상 필수(제목)", "학력 제외")
@@ -347,6 +363,8 @@ def cmd_ingest(a):
             why.append("마감 여부 미확인")
         if it.get("source"):
             why.append(f"소스 {it['source']}")
+        if it.get("career"):
+            why.append(f"경력 칸 {it['career']}")
         d = {"상태": "새로", "회사": comp, "공고": title, "방향": direction_of(title, cond["queries"]), "지역": it.get("region", "") or "미기재",
              "서류마감(D-n)": (f"{dl.isoformat()} ({d_label(dl, today)})" if dl else "마감일 미정"), "선별 근거": " · ".join(why) or "제목·태그 기준",
              "점수": "", "링크": it.get("url", ""), "공고 ID": cid or "—", "발견일": today.isoformat()}
@@ -432,6 +450,8 @@ def cmd_set_score(a):
     hit[0]["점수"] = a.score
     hit[0]["상태"] = a.state or "점수"
     why = score_reject(a.score, read_conditions())
+    if a.career and career_required("", a.career):
+        why = f"경력 필수(공고 요약 칸: {a.career})"
     if a.deadline:                      # 본문에서 확인한 마감일(목록에는 없던 것). 잘못된 형식이면 고치지 않는다
         try:
             dl = J.parse_date(a.deadline)
@@ -469,6 +489,21 @@ def cmd_top(a):
     return 0
 
 
+def site_career(pid):
+    """공고 요약 페이지 1장만 받아 사이트 요약 칸의 경력 값. 실패하면 ''"""
+    import time
+    try:
+        import fetch_posting as FP
+        main_url, reqs = FP.targets(pid.strip(), None)
+    except (ValueError, ImportError):
+        return ""
+    time.sleep(1)
+    st, ctype, raw = FP.get(reqs[0][1], main_url)
+    if st != 200 or not raw:
+        return ""
+    return FP.career_hint(FP.meta_summary(FP.decode(raw, ctype))) or ""
+
+
 def cmd_tidy(a):
     """지금 후보함(새로·본문확보·점수)에 '볼 만한 것만' 기준을 적용. 기본은 미리보기"""
     today = J.parse_date(a.today) if a.today else J.today_kst()
@@ -479,7 +514,14 @@ def cmd_tidy(a):
         if d["상태"] not in ("새로", "본문확보", "점수"):
             keep.append(d)
             continue
-        why = score_reject(d.get("점수", ""), cond) or screen(d.get("공고", ""), d.get("방향", ""), d.get("지역", ""), cond)
+        m = re.search(r"경력 칸 ([^·]+)", d.get("선별 근거", ""))
+        career = m.group(1).strip() if m else ""
+        if not career and a.check_career:
+            career = site_career(d.get("공고 ID", ""))
+            if career:
+                d["선별 근거"] = (d.get("선별 근거", "").rstrip(" ·") + f" · 경력 칸 {career}").strip(" ·")
+        why = (("경력 필수(제목·공고 요약 칸)" if career_required(d.get("공고", ""), career) else None)
+               or score_reject(d.get("점수", ""), cond) or screen(d.get("공고", ""), d.get("방향", ""), d.get("지역", ""), cond))
         if why:
             to_ledger.append((d, why))
         elif stale(d, today, cond["fold_days"]):
@@ -541,6 +583,67 @@ def cmd_restore(a):
     return 0
 
 
+def table_url(pid):
+    site, _, n = (pid or "").partition(":")
+    return {"jobkorea": f"https://www.jobkorea.co.kr/Recruit/GI_Read/{n}",
+            "saramin": f"https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx={n}",
+            "wanted": f"https://www.wanted.co.kr/wd/{n}"}.get(site, "")
+
+
+def cmd_from_table(a):
+    today = J.today_kst()
+    t = J.Table()
+    if t.head_idx is None or t.problems():
+        print("현황표가 없거나 형식 문제 — 고치지 않는다")
+        return 1
+    rows = t.as_dicts()
+    if a.id:
+        hit = [r for r in rows if r["공고 ID"].strip() == a.id.strip()]
+    else:
+        hit = [r for r in rows if r["기업명"] == a.company and (not a.job or r["직무"] == a.job)]
+    if not hit:
+        print("현황표에 그런 행이 없다")
+        return 1
+    if len(hit) > 1:
+        print("해당하는 행이 둘 이상이다 — 공고 ID(--id)나 직무(--job)로 하나를 고른다:")
+        for r in hit:
+            print(f"  {r['기업명']} | {r['직무']} | {r['공고 ID']} | {r['진행상태']}")
+        return 5
+    r = hit[0]
+    if r["진행상태"] != "Not started":
+        print(f"{r['기업명']}은 진행상태가 `{r['진행상태']}`이라 되돌리지 않는다(Not started 인 행만)")
+        return 4
+    m = re.match(r"^\[\[(.+?)\]\]$", r["공고"].strip())
+    target = (m.group(1).replace("\\|", "|").split("|")[0] if m else r["공고"]).strip()
+    title = target[len("채용공고_" + r["기업명"]):].strip() if target.startswith("채용공고_" + r["기업명"]) else (r["직무"] or target)
+    dl = ""
+    if r["서류마감"].strip():
+        try:
+            d = J.parse_date(r["서류마감"])
+            dl = f"{d.isoformat()} ({d_label(d, today)})"
+        except ValueError:
+            dl = ""
+    cand = {"상태": "점수" if re.match(r"^\d", r["적합도"].strip()) else "새로", "회사": r["기업명"], "공고": title or r["직무"],
+            "방향": "일치", "지역": r["지역"] or "미기재", "서류마감(D-n)": dl or "마감일 미정",
+            "선별 근거": f"현황표에서 되돌림 {today.isoformat()} · 공고 문서 [[{target}]]" if m else f"현황표에서 되돌림 {today.isoformat()}",
+            "점수": r["적합도"], "링크": table_url(r["공고 ID"]), "공고 ID": r["공고 ID"] or "—", "발견일": today.isoformat()}
+    print(f"[{'적용' if a.apply else '미리보기'}] 현황표 → 후보함: {r['기업명']} · {r['직무']} · {r['공고 ID']} · 적합도 {r['적합도'] or '—'}")
+    print(f"  후보함에 넣을 줄: [{cand['상태']}] {cand['회사']} · {cand['공고']} · 마감 {cand['서류마감(D-n)']} · 점수 {cand['점수'] or '—'}")
+    print("  현황표에서는 이 행만 빠진다(고치기 전 사본은 Areas/취업/_백업/). raw·wiki·output 공고 문서는 그대로 둔다.")
+    if not a.apply:
+        print("[미리보기] 바꾸지 않았다. 적용하려면 --apply")
+        return 0
+    main, past = load()
+    if any(x["공고 ID"] == cand["공고 ID"] and cand["공고 ID"] != "—" for x in main + past):
+        main = [x for x in main if x["공고 ID"] != cand["공고 ID"]]
+        past = [x for x in past if x["공고 ID"] != cand["공고 ID"]]
+    save([cand] + main, past)
+    t.save([x for x in rows if x is not r])
+    log_line(f"현황표에서 후보함으로 되돌림: {r['기업명']} · {r['공고 ID']}")
+    print("완료")
+    return 0
+
+
 def cmd_list(a):
     main, past = load()
     rows = [d for d in main if not a.state or d["상태"] == a.state]
@@ -561,16 +664,17 @@ def main():
     p = sub.add_parser("ingest"); p.add_argument("file"); p.add_argument("--dry", action="store_true"); p.add_argument("--today")
     p = sub.add_parser("expire"); p.add_argument("--today")
     p = sub.add_parser("set-state"); p.add_argument("--id", required=True); p.add_argument("--state", required=True)
-    p = sub.add_parser("set-score"); p.add_argument("--id", required=True); p.add_argument("--score", required=True); p.add_argument("--state"); p.add_argument("--deadline")
+    p = sub.add_parser("set-score"); p.add_argument("--id", required=True); p.add_argument("--score", required=True); p.add_argument("--state"); p.add_argument("--deadline"); p.add_argument("--career")
     p = sub.add_parser("list"); p.add_argument("--json", action="store_true"); p.add_argument("--state")
     p = sub.add_parser("top"); p.add_argument("--k", type=int)
-    p = sub.add_parser("tidy"); p.add_argument("--apply", action="store_true"); p.add_argument("--today")
+    p = sub.add_parser("tidy"); p.add_argument("--apply", action="store_true"); p.add_argument("--today"); p.add_argument("--check-career", action="store_true")
     p = sub.add_parser("filtered"); p.add_argument("--days", type=int, default=7)
     p = sub.add_parser("restore"); p.add_argument("--id", required=True)
+    p = sub.add_parser("from-table"); p.add_argument("--id"); p.add_argument("--company"); p.add_argument("--job"); p.add_argument("--apply", action="store_true")
     a = ap.parse_args()
     return {"conditions": cmd_conditions, "ingest": cmd_ingest, "expire": cmd_expire, "set-state": cmd_set_state,
             "set-score": cmd_set_score, "list": cmd_list, "top": cmd_top,
-            "tidy": cmd_tidy, "filtered": cmd_filtered, "restore": cmd_restore}[a.cmd](a)
+            "tidy": cmd_tidy, "filtered": cmd_filtered, "restore": cmd_restore, "from-table": cmd_from_table}[a.cmd](a)
 
 
 if __name__ == "__main__":

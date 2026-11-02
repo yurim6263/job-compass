@@ -5,7 +5,7 @@
   python -I -X utf8 fetch_posting.py <공고 ID> [--url <공고 주소>] [--out-dir Areas/취업/_scan-cache]
     공고 ID: jobkorea:N · saramin:N (주소를 알아서 만든다) · 그 밖은 --url 필수(같은 호스트의 주소만 받는다)
   결과: <out-dir>/<이름>/ 에 원본 html(받은 그대로)과 txt, 마지막 줄에 JSON 한 줄
-        {"id","dir","files":[{"kind","status","html","txt","chars"}],"body_likely":bool,"deadline_hint":"YYYY-MM-DD"|"상시"|null,"note"}
+        {"id","dir","files":[{"kind","status","html","txt","chars"}],"body_likely":bool,"deadline_hint":"YYYY-MM-DD"|"상시"|null,"career":"경력 3년이상"|null,"note"}
         요약 txt 맨 위에는 사이트 요약 칸(설명 메타: 경력·학력·마감일 등)을 `요약 칸:` 줄로 그대로 붙인다
   종료 코드: 0 받음(본문 여부는 body_likely) / 3 받지 못함(403·404·연결 실패) / 2 입력 오류
 
@@ -109,6 +109,15 @@ def iso_date(s):
     return f"{int(d.group(1)):04d}-{int(d.group(2)):02d}-{int(d.group(3)):02d}" if d else None
 
 
+def career_hint(metas):
+    """사이트 요약 칸의 경력 값(예: '경력 3년이상'·'신입·경력'·'경력무관'·'경력'). 없으면 None"""
+    for v in metas:
+        m = re.search(r"경력\s*:\s*([^,]+)", v)
+        if m:
+            return m.group(1).strip() or None
+    return None
+
+
 def deadline_hint(metas, text):
     """마감일 힌트: 요약 칸의 `마감일 : …` → 본문의 `마감일` 바로 다음 줄. 'YYYY-MM-DD' · '상시' · None. 힌트일 뿐 — 모델이 txt에서 확인한다."""
     for v in metas:
@@ -164,6 +173,7 @@ def main():
     hits = sum(1 for w in BODY_WORDS if w in joined)
     res = {"id": pid, "dir": str(out), "files": files, "body_likely": hits >= 2,
            "deadline_hint": deadline_hint(all_metas, joined) if joined else None,
+           "career": career_hint(all_metas),
            "note": ("받음" if got else "받지 못함(" + ",".join(str(f["status"]) for f in files) + ")")
            + ("" if hits >= 2 else " · 본문 낱말이 적음 — 그림·스크립트 공고일 수 있음, 점수 없이 미산출")}
     print(json.dumps(res, ensure_ascii=False))
