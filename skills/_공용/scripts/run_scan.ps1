@@ -35,7 +35,7 @@ if ($ConfigDir) {
 $configNote = if ($ConfigDir) { $ConfigDir } elseif ($env:CLAUDE_CONFIG_DIR) { "$($env:CLAUDE_CONFIG_DIR) (환경 변수)" } else { '기본 폴더(~\.claude)' }
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-$prompt = 'job-scan 스킬을 사용해 검색 조건 파일대로 공고 후보를 수집해 주세요. 무인 실행입니다: 질문하지 말고, 허용되지 않아 못 한 단계와 실패한 소스는 요약에 적으세요. 현황표·raw·wiki는 수정하지 마세요.'
+$prompt = 'job-scan 스킬을 사용해 검색 조건 파일대로 공고 후보를 수집하고, 스킬 5단계대로 상위 K건의 미리보기 점수까지 내 주세요. 무인 실행입니다: 질문하지 말고, 명령은 스킬에 적힌 한 줄 명령을 그대로 쓰세요(셸 변수·cd·&&·파이프·리디렉션 없이). 허용되지 않아 못 한 단계와 실패한 소스는 요약에 적으세요. 현황표·raw·wiki는 수정하지 마세요.'
 $allow = @(
   'Skill', 'Read', 'Glob', 'Grep', 'WebFetch',
   'Edit(Areas/취업/공고 후보함.md)', 'Edit(Areas/취업/_scan-log.md)', 'Edit(Areas/취업/_scan-cache/**)',

@@ -6,8 +6,9 @@
   python -I -X utf8 candidates.py ingest <후보.json> [--dry] [--today YYYY-MM-DD]   # 1차 선별 + 중복 제거 + 후보함 기록
   python -I -X utf8 candidates.py expire [--today YYYY-MM-DD]                      # 마감 지난 후보 정리
   python -I -X utf8 candidates.py set-state --id <공고 ID> --state 지원예정|건너뜀|본문확보|점수|새로|마감
-  python -I -X utf8 candidates.py set-score --id <공고 ID> --score "78 🟡" [--state 점수]
+  python -I -X utf8 candidates.py set-score --id <공고 ID> --score "78 🟡" [--state 점수] [--deadline YYYY-MM-DD]
   python -I -X utf8 candidates.py list [--json] [--state 새로]
+  python -I -X utf8 candidates.py top [--k K]                 # 미리보기 점수를 낼 후보 K건(점수 없음 · 일치 먼저, 모자라면 약함 · 마감 임박순)
 
 후보 JSON(모델이 검색 결과를 정규화한 것): [{"company","title","url","id","deadline"(YYYY-MM-DD 또는 ""),"region","source","query"}]
   `query`(그 후보를 찾은 검색어)를 적으면 상한(N)에 걸릴 때 소스·검색어별로 번갈아 담는다(첫 검색어가 상한을 다 쓰지 않게).
@@ -320,8 +321,34 @@ def cmd_set_score(a):
         return 1
     hit[0]["점수"] = a.score
     hit[0]["상태"] = a.state or "점수"
+    if a.deadline:                      # 본문에서 확인한 마감일(목록에는 없던 것). 잘못된 형식이면 고치지 않는다
+        try:
+            dl = J.parse_date(a.deadline)
+            hit[0]["서류마감(D-n)"] = f"{dl.isoformat()} ({d_label(dl, J.today_kst())})"
+            hit[0]["선별 근거"] = hit[0]["선별 근거"].replace("마감 여부 미확인", "마감 본문 확인").strip(" ·")
+        except ValueError:
+            print(f"마감일 형식이 아님(무시): {a.deadline}")
     save(main, past)
     print(f"{hit[0]['회사']} 점수 {a.score}")
+    return 0
+
+
+def cmd_top(a):
+    """미리보기 점수를 낼 후보 K건: 상태 새로·본문확보 · 점수 없음. 방향 `일치`를 먼저, 모자라면 `약함`으로 채운다
+    (약함도 사이트 검색에 걸린 공고다 — 제목에 검색어가 그대로 없을 뿐). 각 묶음 안에서는 마감 임박순, 마감 미정은 최근 발견순."""
+    k = a.k if a.k is not None else read_conditions()["K"]
+    main, _ = load()
+    pool = [d for d in main if d["상태"] in ("새로", "본문확보") and not d["점수"].strip()]
+
+    def deadline(d):
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", d["서류마감(D-n)"])
+        return J.parse_date(m.group(1)) if m else None
+    dated = sorted((d for d in pool if deadline(d)), key=lambda d: (deadline(d), d["공고 ID"]))          # 마감 있는 것 먼저(임박순)
+    undated = sorted((d for d in pool if not deadline(d)), key=lambda d: (d["발견일"], d["공고 ID"]), reverse=True)   # 미정은 최근 발견순
+    pool = dated + undated
+    pool = [d for d in pool if d["방향"].startswith("일치")] + [d for d in pool if not d["방향"].startswith("일치")]
+    print(json.dumps([{"id": d["공고 ID"], "company": d["회사"], "title": d["공고"], "url": d["링크"], "deadline": d["서류마감(D-n)"],
+                       "region": d["지역"]} for d in pool[:k]], ensure_ascii=False, indent=1))
     return 0
 
 
@@ -345,11 +372,12 @@ def main():
     p = sub.add_parser("ingest"); p.add_argument("file"); p.add_argument("--dry", action="store_true"); p.add_argument("--today")
     p = sub.add_parser("expire"); p.add_argument("--today")
     p = sub.add_parser("set-state"); p.add_argument("--id", required=True); p.add_argument("--state", required=True)
-    p = sub.add_parser("set-score"); p.add_argument("--id", required=True); p.add_argument("--score", required=True); p.add_argument("--state")
+    p = sub.add_parser("set-score"); p.add_argument("--id", required=True); p.add_argument("--score", required=True); p.add_argument("--state"); p.add_argument("--deadline")
     p = sub.add_parser("list"); p.add_argument("--json", action="store_true"); p.add_argument("--state")
+    p = sub.add_parser("top"); p.add_argument("--k", type=int)
     a = ap.parse_args()
     return {"conditions": cmd_conditions, "ingest": cmd_ingest, "expire": cmd_expire, "set-state": cmd_set_state,
-            "set-score": cmd_set_score, "list": cmd_list}[a.cmd](a)
+            "set-score": cmd_set_score, "list": cmd_list, "top": cmd_top}[a.cmd](a)
 
 
 if __name__ == "__main__":

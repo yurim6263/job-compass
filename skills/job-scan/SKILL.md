@@ -26,7 +26,13 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, Bash(curl:*), Bas
 3. **후보 JSON 만들기** — `T/<오늘>-후보.json`에 Write(후보 목록 배열).
 4. **1차 선별 + 중복 제거 + 기록** — `python -I -X utf8 $S/candidates.py ingest Areas/취업/_scan-cache/<오늘>-후보.json` (`--dry`면 기록 없이 결과만). 스크립트가 마감 지남 · 제목의 필수 경력("n년 이상") · 제목의 석사 이상 필수 · 제외 키워드/회사 · 이미 있는 공고 ID(현황표·raw·후보함)를 거르고 방향(`일치/약함`)을 표시하고 N건까지 후보함에 쓴다. **이것은 점수가 아니다.**
    - 같은 회사·같은 마감인데 ID가 다르면 `same_posting_maybe`로 알려 준다 — 합치지 않고 표시만(사용자가 결정).
-5. **상위 K건 미리보기 점수** — 새로 들어온 후보 중 방향 `일치`인 것을 마감 임박순으로 K건: 본문을 받아(`/job-posting`의 `references/fetch-and-raw.md` 1단계 방법 — 단 **저장은 `T/<id>/`에만**) 본문이 있으면 요건을 Q·P로 나눠 판정하고 `score_calc.py`로 점수를 낸다(`/job-posting`의 `references/compare-and-score.md` 규칙·카드 근거). 결과는 `T/<id>/점수.md`와 후보함 `점수` 칸에만: `python -I -X utf8 $S/candidates.py set-score --id <공고 ID> --score "<적합도>"`. 본문을 못 얻으면 점수 없이 이유를 `선별 근거`에 쓴다(`미산출 — 본문 미확보`). 카드가 0장이면 점수를 내지 않고 "먼저 `/exp-organize`"를 알린다.
+5. **상위 K건 미리보기 점수** — 아래 명령은 **한 줄씩 그대로** 쓴다(셸 변수·`cd`·`&&`·`|`·`>` 없이. 무인 실행에서는 그런 명령이 막혀 단계가 끊긴다).
+   1. 대상: `python -I -X utf8 $S/candidates.py top` → 점수 없는 후보 K건(방향 `일치`를 먼저, 모자라면 `약함`으로 채움. 각각 마감 임박순, 마감 미정은 최근 발견순). 보고에 `약함`으로 채운 건수를 적는다. 비면 이 단계를 건너뛴다.
+   2. 카드: `Projects/SecondBrain/wiki/내경험_*.md`를 Glob으로 찾아 Read(한 번만 읽고 K건에 같이 쓴다). 카드가 0장이면 점수를 내지 않고 "먼저 `/exp-organize`"를 보고에 쓴다.
+   3. 건마다 본문 받기: `python -I -X utf8 $S/fetch_posting.py <공고 ID>` (잡코리아·사람인은 주소를 스크립트가 만든다. 그 밖은 `--url <후보함 링크>`). 마지막 줄 JSON의 `files[].txt`를 **Read**로 연다(맨 위 `요약 칸:` 줄은 사이트의 경력·학력·마감일 요약). 종료 코드 3이거나 `body_likely`가 false면 점수를 내지 않고 `python -I -X utf8 $S/candidates.py set-score --id <공고 ID> --score "미산출 — 본문 미확보" --state 새로`.
+   4. 판정: txt에서 자격(Q)·우대(P)·사용 기술·근무지·경력·학력·마감을 읽어 `/job-posting`의 `references/compare-and-score.md` 규칙대로 카드와 대조한다(카드에 없는 경험은 갭). 경력 연차 요구(예: "경력 3년 이상", "경력 3~5년")는 `gates.경력 = 필수`, 마감은 `deadline_hint`와 txt로 확인(`상시`면 `남음`).
+   5. 계산: 판정을 `Areas/취업/_scan-cache/<이름>/점수입력.json`에 **Write**(`<이름>` = 공고 ID의 `:`를 `-`로, 3번이 만든 폴더) → `python -I -X utf8 $S/score_calc.py Areas/취업/_scan-cache/<이름>/점수입력.json` → 출력 끝 "현황표 적합도:" 줄의 값(예: `74 🟡`)을 그대로 `python -I -X utf8 $S/candidates.py set-score --id <공고 ID> --score "<적합도>" --deadline <YYYY-MM-DD>`(`--deadline`은 본문에서 마감일을 확인했을 때만 — 후보함·캘린더의 "마감일 미정"이 채워진다. `상시`면 붙이지 않는다). 판정 근거 몇 줄은 같은 폴더 `점수.md`에 Write.
+   6. 결과는 `_scan-cache/`와 후보함 `점수` 칸에만. raw·wiki·현황표는 만들지 않는다(정식 저장은 사용자가 고른 뒤 `/job-posting`).
 6. **정리·갱신** — `python -I -X utf8 $S/candidates.py expire`(마감 지난 후보 `마감`으로, 일주일 지나면 `후보함_지난`) → `python -I -X utf8 $S/calendar_export.py build` → `python -I -X utf8 $S/dashboard.py today --write`.
 7. **요약 보고** — 새 후보 수 / 분석한 것과 점수 상위 / 마감 임박(3일) 후보 / 제외 건수(경력·학력·마감·중복) / **실패한 소스와 이유** / 허용이 필요했던 단계 / 쓴 파일 목록. 같은 소스가 `_scan-log.md`에 3번 연속 실패로 적혀 있으면 요약 맨 위에 경고.
 
