@@ -76,6 +76,28 @@ class CourseToolsTest(VaultCase):
         self.assertEqual(res["parts"]["A"], 22.5)
         self.assertEqual(res["parts"]["C"], 7.5)
 
+    def test_cover_letter_suggests_course_as_support_only(self):
+        self.put(course_doc(GOOD))
+        self.write_json("rec.json", {"company": "가상A사", "job_tags": ["LLM응용"], "questions": [
+            {"no": 1, "text": "직무 역량", "types": ["직무역량"], "keywords": ["FastAPI 백엔드", "pandas"]},
+            {"no": 2, "text": "성장 과정", "types": ["성장"], "keywords": []},
+            {"no": 3, "text": "협업", "types": ["협업"], "keywords": ["회의"]}]})
+        r = self.run_script("card_recommend.py", "rec.json", "--json")
+        self.assertEqual(r.code, 0, r.text)
+        res = json.loads(r.out)["result"]
+        self.assertEqual(res["1"]["edu"], ["edu-20261102-01"], "기술 낱말이 겹치면 보조 근거")
+        self.assertEqual(res["2"]["edu"], ["edu-20261102-01"], "성장 문항은 직무 태그만 맞아도")
+        self.assertEqual(res["3"]["edu"], [], "관련 없는 문항엔 제안 안 함")
+        for v in res.values():
+            self.assertFalse(str(v["first"]).startswith("edu-"), "교육 이수는 카드 자리를 차지하지 않음")
+        out = self.run_script("card_recommend.py", "rec.json").out
+        self.assertIn("교육 이수(보조 근거): edu-20261102-01 가상 데이터 과정 — ", out)
+        self.assertIn("FastAPI 백엔드(과제)", out)
+        # 교육 이수는 고정(pins)할 수 없다
+        self.write_json("rec2.json", {"job_tags": [], "questions": [{"no": 1, "text": "x", "types": ["성장"], "keywords": []}],
+                                      "pins": {"1": "edu-20261102-01"}})
+        self.assertTrue(json.loads(self.run_script("card_recommend.py", "rec2.json", "--json").out)["pin_errors"])
+
     def test_notion_plan_has_course_row(self):
         self.put(course_doc(GOOD))
         r = self.run_script("notion_sync.py", "plan", "--table", "경험정리")

@@ -16,6 +16,9 @@
 후보 자격: evidence 있음 · fact_status 가 자료확인/본인진술(미확인은 빼고 "미확인 N장 제외") · origin 이 받은교재가 아님 · AI활용 문항은 ai_usage 가 채워진 카드만.
 점수: 카드 question_types 에 문항 유형 +3 · 문항·공고 키워드와 카드 keywords 겹침 낱말 수×1(최대 +4) · 이 회사 apply_plans +2 · job_link_tags 일치 +1 · numbers 판정 O +1  →  × 근거 배수(자료확인 1.0 / 본인진술 0.8)
 동점: numbers=O 우선 → 카드 날짜(id 의 YYYYMMDD)가 최근 → id 오름차순.
+교육 이수(wiki/교육이수_*.md, 2026-11-02): 카드 자리(주 소재)를 차지하지 않고 문항마다 **보조 근거**로만 최대 2개 제안한다.
+      점수 = 문항 키워드와 겹친 기술(과제·실습 +2, 수강 +1) · 공고 직무 태그 일치 +1 · 성장·지원동기·직무역량 문항이면 +1(이때는 태그 일치만으로도 후보)
+      × 근거 배수(자료확인 1.0 / 본인진술 0.8). 미확인은 빼고, 카드처럼 고정(pins)할 수 없다. 자소서에는 "배운 것"까지만(성과·수치는 카드에서만).
 배분: 후보가 적은 문항부터 1순위를 정한다. 한 카드는 한 문서에서 주 소재로 한 번만(다른 문항은 "보조 언급"까지), 같은 프로젝트(문서)는 문항 2개까지.
       남는 카드가 없으면 `카드 부족` + 가까운 카드를 "다른 면으로 재사용" 후보로 제안.
       어떤 문항의 1순위보다 점수가 높은 카드가 다른 문항의 주 소재라서 못 들어갔으면 그 사실을 `주의`로 적는다.
@@ -31,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import verify_cards as VC  # noqa: E402
+import course_tools as CT  # noqa: E402
 
 WIKI = Path("Projects/SecondBrain/wiki")
 MULT = {"자료확인": 1.0, "본인진술": 0.8}
@@ -66,6 +70,35 @@ def load_cards(company):
                           "plan": bool(re.search(r"입사 후 적용,\s*" + re.escape(company or "∅"), c["block"])) if company else False,
                           "date": m.group(1) if m else "00000000"})
     return cards, excluded
+
+
+EDU_TYPES = {"성장", "지원동기", "직무역량"}
+
+
+def load_edu():
+    out = []
+    for c in CT.load_courses(WIKI):
+        if c["fact"] not in MULT:
+            continue
+        out.append({**c, "kw": [(k, s["level"], s["name"]) for s in c["skills"] for k in CT.skill_keywords(s["name"])]})
+    return out
+
+
+def edu_matches(q, job_tags, courses, top=2):
+    qk = {norm(k) for k in q.get("keywords", [])}
+    typed = bool(set(q.get("types", [])) & EDU_TYPES)
+    res = []
+    for c in courses:
+        hits = {}
+        for k, level, name in c["kw"]:
+            if norm(k) in qk:
+                hits[name] = level
+        tag = bool(set(c["tags"]) & set(job_tags))
+        sc = sum(2 if lv in ("과제", "실습") else 1 for lv in hits.values()) + (1 if tag else 0) + (1 if typed else 0)
+        if hits or (typed and tag):
+            res.append({"course": c, "score": round(sc * MULT[c["fact"]], 2), "hits": hits, "tag": tag})
+    res.sort(key=lambda r: (-r["score"], r["course"]["id"]))
+    return res[:top]
 
 
 def score(card, q, job_tags):
@@ -104,6 +137,7 @@ def tie_key(c, sc):
 
 def recommend(inp):
     cards, excluded = load_cards(inp.get("company", ""))
+    courses = load_edu()
     qs = inp.get("questions", [])
     job_tags = inp.get("job_tags", [])
     cand = {}
@@ -155,6 +189,7 @@ def recommend(inp):
             picks[q["no"]] = take(q, False)
     owner = {r["card"]["id"]: no for no, r in picks.items() if r}
     for q in qs:
+        edu = edu_matches(q, job_tags, courses)
         pick = picks[q["no"]]
         alts = [r for r in cand[q["no"]] if r is not pick and r["score"] > 0 and relevant(r["parts"])][:2]
         if pick:
@@ -166,11 +201,11 @@ def recommend(inp):
                     if relevant(r["parts"]) and owner.get(r["card"]["id"], q["no"]) != q["no"]:
                         notes.append((r, owner[r["card"]["id"]]))
             result[q["no"]] = {"first": pick, "alts": alts, "lack": False, "weak": q["no"] not in pinned and not relevant(pick["parts"]),
-                               "pinned": q["no"] in pinned, "blocked": notes}
+                               "pinned": q["no"] in pinned, "blocked": notes, "edu": edu}
         else:
             reuse = next((r for r in cand[q["no"]] if r["score"] > 0 and relevant(r["parts"])), None)
-            result[q["no"]] = {"first": None, "alts": [x for x in alts if x is not reuse], "lack": True, "reuse": reuse}
-    return {"cards": len(cards), "excluded": excluded, "result": result, "questions": qs, "pin_errors": pin_errors}
+            result[q["no"]] = {"first": None, "alts": [x for x in alts if x is not reuse], "lack": True, "reuse": reuse, "edu": edu}
+    return {"cards": len(cards), "courses": len(courses), "excluded": excluded, "result": result, "questions": qs, "pin_errors": pin_errors}
 
 
 def fmt(r):
@@ -178,8 +213,15 @@ def fmt(r):
     return f"{c['id']} ({c['doc'].replace('내경험_', '')}, {c['origin']}, {c['fact']}) {r['score']}점 = " + (", ".join(r["parts"]) or "겹침 없음") + (f" ×{r['mult']}" if r["mult"] != 1.0 else "")
 
 
+def fmt_edu(e):
+    c = e["course"]
+    hits = "·".join(f"{n}({lv})" for n, lv in e["hits"].items()) or "직무 태그 일치"
+    return f"{c['id']} {c['title']} — {hits} · {e['score']}점"
+
+
 def render(res):
-    out = ["## 카드 추천", "", f"후보 카드 {res['cards']}장" + (f" · 미확인 {res['excluded']['미확인']}장 제외" if res["excluded"]["미확인"] else "")
+    out = ["## 카드 추천", "", f"후보 카드 {res['cards']}장" + (f" · 교육 이수 {res['courses']}개" if res.get("courses") else "")
+           + (f" · 미확인 {res['excluded']['미확인']}장 제외" if res["excluded"]["미확인"] else "")
            + (f" · 받은교재 {res['excluded']['받은교재']}장 제외" if res["excluded"]["받은교재"] else ""), ""]
     for q in res["questions"]:
         r = res["result"][q["no"]]
@@ -193,6 +235,10 @@ def render(res):
                        + (" — **약한 추천**(유형·낱말 일치 없음, 직무·수치 가산만)" if r.get("weak") else ""))
         for a in r["alts"]:
             out.append(f"- 대안: {fmt(a)}")
+        for e in r.get("edu", []):
+            out.append(f"- 교육 이수(보조 근거): {fmt_edu(e)} — \"교육 과정에서 ○○을 실습/수강했다\"까지만, 성과·수치는 카드에서만")
+        if r["lack"] and r.get("edu"):
+            out.append("  - 카드가 없으면 위 교육 이수로 '배운 것과 앞으로 할 것'을 쓸 수 있다(경험한 것처럼 쓰지 않는다)")
         for b, owner_no in r.get("blocked", []):
             out.append(f"- **주의**: {b['card']['id']}({b['score']}점)는 {owner_no}번 문항의 주 소재라 이 문항엔 못 들어갔다. "
                        f"이 문항에 쓰려면 `pins`로 고정하면 된다(그러면 {owner_no}번 문항은 남은 카드로 다시 배분된다)")
@@ -212,7 +258,8 @@ def main():
     res = recommend(json.loads(raw))
     if "--json" in sys.argv:
         slim = {str(k): {"first": (v["first"]["card"]["id"] if v["first"] else None), "lack": v["lack"], "pinned": v.get("pinned", False),
-                         "alts": [a["card"]["id"] for a in v["alts"]]} for k, v in res["result"].items()}
+                         "alts": [a["card"]["id"] for a in v["alts"]], "edu": [e["course"]["id"] for e in v.get("edu", [])]}
+                for k, v in res["result"].items()}
         print(json.dumps({"cards": res["cards"], "excluded": res["excluded"], "result": slim, "pin_errors": res["pin_errors"]}, ensure_ascii=False, indent=1))
     else:
         print(render(res))
