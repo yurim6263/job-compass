@@ -172,6 +172,17 @@ def suggest(row, steps, today):
     return "", ""
 
 
+def read_expire_record(today):
+    """오늘 `status_table.py expire --apply`가 지원취소로 바꾼 회사 이름들(브리핑용). 기록이 없거나 오늘 것이 아니면 빈 목록."""
+    try:
+        rec = json.loads(J.EXPIRE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if rec.get("date") != today.isoformat():
+        return []
+    return [it.get("기업명", "") for it in rec.get("items", [])]
+
+
 def build(today):
     t = J.Table()
     warnings, rows = [], []
@@ -222,6 +233,10 @@ def build(today):
     cands.sort(key=lambda c: -(score_of(c.get("점수", "")) or -1))
     urgent.sort(key=lambda i: i["deadline"])
     overdue.sort(key=lambda i: i["deadline"])
+    # 마감 지남 브리핑(2026-11-17 사용자 결정): 이 함수는 현황표를 고치지 않는다. 정리는 `status_table.py expire`(/job-flow가 호출)가 한다.
+    expired_auto = [i for i in overdue if i["row"]["진행상태"] in J.EXPIRE_AUTO]
+    expired_ask = [i for i in overdue if i["row"]["진행상태"] in J.EXPIRE_ASK]
+    expired_done = read_expire_record(today)
 
     # 다음 행동: 게이트 🚫(Not started) 뒤로, 마감 임박순, 점수 높은 순
     def prio(i):
@@ -236,6 +251,7 @@ def build(today):
     closed = sum(1 for r in rows if r["진행상태"] in J.CLOSED)
     inprog.sort(key=lambda i: (i["deadline"] is None, i["deadline"] or today, i["row"]["기업명"]))
     return {"today": today, "empty": not rows, "rows": rows, "overdue": overdue, "wait_result": wait_result, "urgent": urgent,
+            "expired_auto": expired_auto, "expired_ask": expired_ask, "expired_done": expired_done,
             "stale": stale, "cands": cands, "cand_total": len(cands), "inprog": inprog, "closed": closed, "actions": actions[:3],
             "warnings": warnings, "scan_warn": scan_warn, "bad_date": bad_date, "dups": dups}
 
@@ -255,12 +271,22 @@ def render_today(b, now):
         return "\n".join(L) + "\n"
     for w in b["warnings"]:
         L.append(f"⚠️ {w}")
+    exp_auto, exp_ask, exp_done = b.get("expired_auto", []), b.get("expired_ask", []), b.get("expired_done", [])
+    n_exp = len(exp_auto) + len(exp_ask) + len(exp_done)
+    if n_exp:
+        L.append(f"⏰ 마감 지남 — 지원 준비 중이던 공고 {n_exp}개")
+        if exp_done:
+            L.append("  - 오늘 자동 정리(지원취소 · 메모 \"마감 지남(미지원)\"): " + ", ".join(exp_done))
+        if exp_auto:
+            L.append("  - 정리 대기(다음에 `/job-flow`를 열 때 자동 정리): "
+                     + ", ".join(f"{i['row']['기업명']}({i['deadline'].strftime('%m-%d')})" for i in exp_auto))
+        if exp_ask:
+            L.append("  - 제출 여부 확인 필요(제출했으면 `지원완료`, 안 했으면 `지원취소`라고 말씀해 주세요): "
+                     + ", ".join(f"{i['row']['기업명']}({i['deadline'].strftime('%m-%d')}, {i['row']['진행상태']})" for i in exp_ask))
     L.append("⚠️ 먼저 볼 것")
     first = []
     for i in b["wait_result"]:
         first.append(f"  - 마감 경과 — 결과 확인 필요: {i['row']['기업명']} ({d_label(i['deadline'], today)}) [{i['row']['진행상태']}]")
-    for i in b["overdue"]:
-        first.append(f"  - 마감이 지났는데 지원 전 상태: {i['row']['기업명']} ({d_label(i['deadline'], today)}) [{i['row']['진행상태']}]")
     for w in b["scan_warn"]:
         first.append(f"  - 스캔 소스 경고: {w}")
     if b["bad_date"]:
@@ -352,6 +378,8 @@ def to_json(b, now):
             "files": {"candidates": CAND.as_posix(), "today": OUT_MD.as_posix(), "ledger": (AREA / "_수집기록.md").as_posix()},
             "counts": {"in_progress": len(b.get("inprog", [])), "closed": b.get("closed", 0), "urgent": len(b.get("urgent", [])),
                        "overdue": len(b.get("overdue", [])), "wait_result": len(b.get("wait_result", [])),
+                       "expired_pending": len(b.get("expired_auto", [])), "expired_ask": len(b.get("expired_ask", [])),
+                       "expired_cleaned_today": len(b.get("expired_done", [])),
                        "new_candidates": b.get("cand_total", 0),
                        "new_candidates_today": sum(1 for c in read_candidates(b["today"])
                                                    if c.get("발견일", "").strip() == b["today"].isoformat()),
@@ -360,6 +388,8 @@ def to_json(b, now):
             "last_scan": last_scan(),
             "urgent": [item(i) for i in b.get("urgent", [])], "overdue": [item(i) for i in b.get("overdue", [])],
             "wait_result": [item(i) for i in b.get("wait_result", [])],
+            "expired": {"pending": [item(i) for i in b.get("expired_auto", [])], "ask": [item(i) for i in b.get("expired_ask", [])],
+                        "cleaned_today": b.get("expired_done", [])},
             "stale": [{**item(i), "days": d} for i, d in b.get("stale", [])],
             "new_candidates": [cand(c) for c in b.get("cands", [])[:3]],
             "in_progress": [item(i) for i in b.get("inprog", [])], "next_actions": b.get("actions", []),

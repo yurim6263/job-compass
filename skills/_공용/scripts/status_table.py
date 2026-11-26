@@ -15,6 +15,10 @@
                                                                   # 진행상태 갱신(임시 — /job-flow가 배포되면 그쪽이 맡는다)
   python -I -X utf8 status_table.py undo-status [--apply]         # 방금 한 set-status 한 번을 취소(기본은 미리보기). 실수 취소 전용
   python -I -X utf8 status_table.py migrate [--apply] [--rewrite-header]   # 10열 옛 표 → 13열 (기본은 미리보기)
+  python -I -X utf8 status_table.py expire [--apply] [--today YYYY-MM-DD]  # 마감 지난 미제출 행 정리(/job-flow가 호출). 기본은 미리보기
+  python -I -X utf8 status_table.py undo-expire [--apply] [--id 공고ID]    # 가장 최근 expire --apply 를 되돌림
+  마감 정리(2026-11-17 사용자 결정): 마감 다음 날부터. Not started·일정 + 자소서 항목 정리 → 지원취소 + 메모 "마감 지남(미지원)".
+  인적사항 입력완료·자소서 작성중·자소서 작성 완료는 제출했을 수 있어 바꾸지 않고 알린다. 지원완료 이후·마감일 없는 행은 건드리지 않는다.
 
 규칙(기획 00 §2, 02 §4):
   - 행 **추가**는 /job-posting. `update-fit`은 그 공고를 다시 분석했을 때 적합도·지역·메모(끝에 덧붙이기)만 바꾼다.
@@ -130,7 +134,7 @@ def check_values(d):
     if d["진행상태"] not in J.STATES:
         errs.append(f"진행상태 `{d['진행상태']}`가 목록 밖")
     if d["직무"] not in J.JOBS:
-        errs.append(f"직무 `{d['직무']}`가 목록 밖(제조AI · CBM시스템개발자 · LLM응용 · 데이터 · 기타 중 하나, 모르면 사용자에게 묻기)")
+        errs.append(f"직무 `{d['직무']}`가 목록 밖(제조AI · CBM시스템개발자 · MES · LLM응용 · 데이터 · 기타 중 하나, 모르면 사용자에게 묻기)")
     if d["유형"] and d["유형"] not in J.TYPES:
         errs.append(f"유형 `{d['유형']}`가 목록 밖(안 맞으면 비움)")
     if d["서류마감"]:
@@ -270,6 +274,110 @@ def cmd_undo_status(a):
     return 0
 
 
+def expire_scan(rows, today):
+    """마감(서류마감)이 오늘보다 앞선 지원 전 행을 둘로 나눈다. 마감일이 없거나 읽을 수 없으면 건드리지 않는다."""
+    auto, ask = [], []
+    for d in rows:
+        st = d["진행상태"]
+        if st in J.CLOSED or st not in J.PRE_APPLY or not d["서류마감"].strip():
+            continue
+        try:
+            dl = J.parse_date(d["서류마감"])
+        except ValueError:
+            continue
+        if dl >= today:
+            continue
+        (auto if st in J.EXPIRE_AUTO else ask).append((d, dl))
+    return auto, ask
+
+
+def cmd_expire(a):
+    """마감이 지났는데 제출하지 않은 행을 정리한다.
+    지원 준비가 거의 없던 행(Not started·일정 + 자소서 항목 정리)은 `지원취소` + 메모 "마감 지남(미지원)"로 바꾸고,
+    작성 중이던 행(인적사항 입력완료·자소서 작성중·자소서 작성 완료)은 제출했을 수 있어 바꾸지 않고 알리기만 한다.
+    기본은 미리보기, --apply 일 때만 쓴다(수정 전 사본은 Areas/취업/_백업/)."""
+    t = load()
+    if t.head_idx is None:
+        print("현황표 없음 — 할 일 없음")
+        return 0
+    need_ok(t)
+    today = J.parse_date(a.today) if a.today else J.today_kst()
+    rows = t.as_dicts()
+    auto, ask = expire_scan(rows, today)
+    print(f"기준일 {today.isoformat()} · 마감 지난 지원 준비 행: 자동 정리 대상 {len(auto)}건 · 제출 여부 확인 필요 {len(ask)}건")
+    for d, dl in auto:
+        print(f"  자동 정리: {d['기업명']} · {d['직무']} · [{d['진행상태']}] · 마감 {dl.isoformat()} → 지원취소 + 메모 \"{J.EXPIRE_MEMO}\"")
+    for d, dl in ask:
+        print(f"  확인 필요: {d['기업명']} · {d['직무']} · [{d['진행상태']}] · 마감 {dl.isoformat()} — 제출했으면 지원완료, 안 했으면 지원취소")
+    if not auto:
+        return 0
+    if not a.apply:
+        print("미리보기만 했다. 정리하려면 --apply (수정 전 사본을 먼저 남긴다).")
+        return 0
+    items = []
+    for d, dl in auto:
+        before = {k: d[k] for k in UNDO_FIELDS}
+        d["진행상태"], d["상태일"] = "지원취소", today.isoformat()
+        d["메모"] = (d["메모"] + " · " if d["메모"] else "") + f"{today.isoformat()} {J.EXPIRE_MEMO}"
+        items.append({"기업명": d["기업명"], "직무": d["직무"], "공고 ID": d["공고 ID"],
+                      "before": before, "after": {k: d[k] for k in UNDO_FIELDS}})
+    t.save(rows)
+    rec = {"date": today.isoformat(), "items": items}
+    if J.EXPIRE_FILE.exists():
+        try:
+            old = json.loads(J.EXPIRE_FILE.read_text(encoding="utf-8"))
+            if old.get("date") == rec["date"]:
+                rec["items"] = old.get("items", []) + items
+        except (ValueError, OSError):
+            pass
+    J.EXPIRE_FILE.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+    print(f"정리함: {len(auto)}건 → 지원취소(사본은 Areas/취업/_백업/). 잘못 정리했으면 undo-expire")
+    return 0
+
+
+def cmd_undo_expire(a):
+    """가장 최근 expire --apply 가 바꾼 행을 되돌린다(진행상태·상태일·최종 단계·메모). 그 뒤 그 행이 또 바뀌었으면 건너뛴다."""
+    if not J.EXPIRE_FILE.exists():
+        print("되돌릴 기록이 없다(최근 마감 정리 기록 없음)")
+        return 4
+    rec = json.loads(J.EXPIRE_FILE.read_text(encoding="utf-8"))
+    t = load()
+    need_ok(t)
+    rows = t.as_dicts()
+    todo = []
+    for it in rec.get("items", []):
+        if a.id and it["공고 ID"] != a.id:
+            continue
+        d, err = pick_row(rows, it["공고 ID"], it["기업명"], it["직무"])
+        if err:
+            print(f"건너뜀 — {it['기업명']}: {err}")
+            continue
+        if any(d[k] != it["after"][k] for k in UNDO_FIELDS):
+            print(f"건너뜀 — {it['기업명']}: 정리 뒤에 또 바뀌었다")
+            continue
+        todo.append((d, it))
+    if not todo:
+        print("되돌릴 행이 없다")
+        return 4
+    for d, it in todo:
+        print(f"되돌릴 행: {d['기업명']} · 진행상태 {d['진행상태']} → {it['before']['진행상태']}")
+    if not a.apply:
+        print("미리보기만 했다. 되돌리려면 --apply (수정 전 사본을 먼저 남긴다).")
+        return 0
+    for d, it in todo:
+        for k in UNDO_FIELDS:
+            d[k] = it["before"][k]
+    t.save(rows)
+    left = [it for it in rec.get("items", []) if not any(it is x for _, x in todo)]
+    if left:
+        rec["items"] = left
+        J.EXPIRE_FILE.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+    else:
+        J.EXPIRE_FILE.unlink()
+    print(f"되돌림: {len(todo)}건(사본은 Areas/취업/_백업/)")
+    return 0
+
+
 def cmd_migrate(a):
     t = load()
     if t.head_idx is None:
@@ -315,11 +423,14 @@ def main():
     p = sub.add_parser("set-status"); p.add_argument("--id"); p.add_argument("--company"); p.add_argument("--job"); p.add_argument("--state", required=True); p.add_argument("--note"); p.add_argument("--allow-back", action="store_true")
     p = sub.add_parser("undo-status"); p.add_argument("--apply", action="store_true")
     p = sub.add_parser("migrate"); p.add_argument("--apply", action="store_true"); p.add_argument("--rewrite-header", action="store_true")
+    p = sub.add_parser("expire"); p.add_argument("--apply", action="store_true"); p.add_argument("--today")
+    p = sub.add_parser("undo-expire"); p.add_argument("--apply", action="store_true"); p.add_argument("--id")
     a = ap.parse_args()
     if a.cmd == "add" and (not a.company or not a.job):
         J.die("--company 와 --job 이 필요하다", 2)
     return {"check": cmd_check, "list": cmd_list, "find": cmd_find, "add": cmd_add,
-            "update-fit": cmd_update_fit, "set-status": cmd_set_status, "undo-status": cmd_undo_status, "migrate": cmd_migrate}[a.cmd](a)
+            "update-fit": cmd_update_fit, "set-status": cmd_set_status, "undo-status": cmd_undo_status, "migrate": cmd_migrate,
+            "expire": cmd_expire, "undo-expire": cmd_undo_expire}[a.cmd](a)
 
 
 if __name__ == "__main__":
